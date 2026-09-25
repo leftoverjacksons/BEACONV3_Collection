@@ -44,6 +44,27 @@ class StoreTests(unittest.TestCase):
         self.assertAlmostEqual(rose["prevailing"], 90)
 
 
+class HoldTests(unittest.TestCase):
+    def test_alternating_hobo_fields_are_continuous(self):
+        s = Store(3600)
+        now = time.time()
+        for i in range(60):
+            if i % 2:
+                s.add_sample({"source": "hobo", "t": now - 60 + i, "solar_Wm2": 10.0})
+            else:
+                s.add_sample({"source": "hobo", "t": now - 60 + i, "hobo_T_C": 20.0})
+        h = history(s, 600, 600)["hobo"]
+        self.assertNotIn(None, h["hobo_T_C"])
+        self.assertNotIn(None, h["solar_Wm2"][1:])   # nothing to hold before the first
+
+    def test_real_gap_still_breaks(self):
+        s = Store(7200)
+        now = time.time()
+        for t in (now - 3000, now - 2990, now - 10, now):
+            s.add_sample({"source": "hobo", "t": t, "hobo_T_C": 20.0})
+        self.assertIn(None, history(s, 3600, 600)["hobo"]["hobo_T_C"])
+
+
 class HandlerTests(unittest.TestCase):
     """Read-only port refuses writes; kiosk exit works from loopback."""
 

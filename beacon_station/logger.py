@@ -25,6 +25,7 @@ from datetime import datetime
 from . import config as config_mod
 from .csvlog import RotatingCsv
 from .parsers import AnemoParser, BeaconParser
+from .hobo import HoboReader
 from .serial_io import InstrumentReader, SerialSource, SimAnemo, SimBeacon
 
 STATUS_PERIOD_S = 2.0
@@ -94,11 +95,13 @@ def main(argv=None):
         src = sim_cls() if args.simulate else SerialSource(c["port"],
                                                             c["baud"])
         readers[name] = InstrumentReader(name, src, parser_cls(), q)
+    if cfg["hobo"]["enabled"]:
+        readers["hobo"] = HoboReader(cfg["hobo"], q, simulate=args.simulate)
 
     run_info = {
         "simulated": args.simulate,
-        "instruments": {n: {"port": r.source.describe(),
-                            "baud": cfg[n]["baud"]}
+        "instruments": {n: {"port": r.state["port"],
+                            "baud": cfg[n].get("baud")}
                         for n, r in readers.items()},
     }
     csvlog = RotatingCsv(cfg["logging"]["data_dir"],
@@ -119,8 +122,8 @@ def main(argv=None):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: halt.set())
 
-    counts = {"beacon": 0, "anemo": 0, "event": 0}
-    last_t = {"beacon": None, "anemo": None, "event": None}
+    counts = {"beacon": 0, "anemo": 0, "hobo": 0, "event": 0}
+    last_t = {k: None for k in counts}
     started = time.time()
 
     control.start()

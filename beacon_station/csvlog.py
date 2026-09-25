@@ -11,6 +11,11 @@ Schema: the first 11 columns are identical to the original laptop logger
     utc_time      same instant as iso_time, UTC, explicit +00:00 offset
     dev_uptime_s  BEACON's own uptime stamp for the 'Raw:' line (beacon rows)
     note          event-marker label (source == 'event')
+  schema 3 (HOBO MX2309 over Bluetooth, source == 'hobo'; see hobo.py):
+    hobo_T_C hobo_RH_pct solar_Wm2 solar_accum_MJm2 hobo_ch0d
+    hobo_addr     Bluetooth address of the logger heard
+    hobo_raw      the advertisement payload, hex — decoding is inferred, so
+                  the raw bytes are kept for re-decoding
 
 iso_time stays naive local time, as before. Temperatures stay native deg C.
 
@@ -30,13 +35,15 @@ from pathlib import Path
 
 from . import sysinfo
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 CSV_COLUMNS = [
     "iso_time", "source",
     "TMP119_C", "SHT3x_C", "HDC3022_C", "RH_pct", "P_hPa",
     "comp_temp_C", "WBGT_C",
     "wind_ms", "wind_deg",
     "utc_time", "dev_uptime_s", "note",
+    "hobo_T_C", "hobo_RH_pct", "solar_Wm2", "solar_accum_MJm2", "hobo_ch0d",
+    "hobo_addr", "hobo_raw",
 ]
 FILE_PREFIX = "beacon_env_log_"
 
@@ -63,6 +70,14 @@ def format_row(s):
     elif s["source"] == "anemo":
         row["wind_ms"] = _f(s["wind_ms"])
         row["wind_deg"] = _f(s["wind_deg"], ".1f")
+    elif s["source"] == "hobo":
+        row["hobo_T_C"] = _f(s.get("hobo_T_C"), ".3f")
+        row["hobo_RH_pct"] = _f(s.get("hobo_RH_pct"), ".2f")
+        row["solar_Wm2"] = _f(s.get("solar_Wm2"), ".3f")
+        row["solar_accum_MJm2"] = _f(s.get("solar_accum_MJm2"), ".6f")
+        row["hobo_ch0d"] = _f(s.get("hobo_ch0d"), ".4f")
+        row["hobo_addr"] = s.get("hobo_addr", "")
+        row["hobo_raw"] = s.get("hobo_raw", "")
     elif s["source"] == "event":
         # Keep the label CSV-safe and single-line.
         row["note"] = " ".join(str(s.get("note", "")).split())[:200]
@@ -111,6 +126,7 @@ class RotatingCsv:
             "python": platform.python_version(),
             "clock_synced_at_open": sysinfo.clock_synced(),
             "units": {"temperature": "degC", "pressure": "hPa",
+                      "solar": "W/m2", "solar_accum": "MJ/m2 (inferred)",
                       "wind_speed": "m/s", "wind_dir": "deg from N",
                       "rh": "%"},
             **self.run_info,

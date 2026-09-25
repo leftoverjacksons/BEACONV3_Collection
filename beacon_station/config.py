@@ -30,6 +30,16 @@ DEFAULTS = {
         "stale_warn_s": 5,
         "stale_error_s": 30,
     },
+    "hobo": {
+        # HOBO MX2309 heard over Bluetooth LE advertisements (no pairing).
+        "enabled": True,
+        # "" = any Onset logger in range; set the MAC (e.g.
+        # "F8:27:3E:19:81:A5") when more than one HOBO is nearby.
+        "address": "",
+        "heartbeat_s": 60,       # log at least this often even if unchanged
+        "stale_warn_s": 60,
+        "stale_error_s": 300,
+    },
     "logging": {
         "data_dir": "~/beacon_data",
         "fsync_interval_s": 30,  # flush() every row, fsync() this often

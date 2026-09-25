@@ -22,6 +22,15 @@ baud = 115200
 stale_warn_s = 5
 stale_error_s = 30
 
+[hobo]
+# HOBO MX2309 Temp/RH/Solar logger, read passively from its Bluetooth
+# advertisements. Turn on "Bluetooth Always On" in HOBOconnect.
+enabled = true
+address = ""             # "" = any Onset logger in range, or e.g. "F8:27:3E:19:81:A5"
+heartbeat_s = 60         # log at least this often even when values are unchanged
+stale_warn_s = 60
+stale_error_s = 300
+
 [logging]
 data_dir = "~/beacon_data"
 fsync_interval_s = 30    # rows are flushed immediately; fsync'd this often

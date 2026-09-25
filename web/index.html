@@ -11,13 +11,15 @@
 <header id="bar">
   <nav id="tabs">
     <button data-page="overview" class="active">Overview</button>
-    <button data-page="trends">Trends</button>
+    <button data-page="temp">Temp/RH</button>
     <button data-page="wind">Wind</button>
+    <button data-page="solar">Solar</button>
     <button data-page="system">System</button>
   </nav>
   <div id="health">
     <span class="chip" id="chip-beacon"><i></i>BEACON</span>
-    <span class="chip" id="chip-anemo"><i></i>ANEMO</span>
+    <span class="chip" id="chip-anemo"><i></i>WIND</span>
+    <span class="chip" id="chip-hobo"><i></i>HOBO</span>
   </div>
   <div id="clock">--:--:--</div>
   <button id="markBtn" title="Write a timestamped event marker to the log">Mark</button>
@@ -72,12 +74,26 @@
       </div>
       <div class="foot" id="ov-afoot">no data</div>
     </div>
+
+    <div class="card strip" id="card-hobo">
+      <div class="card-head">
+        <h2>HOBO MX2309</h2>
+        <span class="state" id="st-hobo">–</span>
+      </div>
+      <div class="strip-row">
+        <div><label>Solar</label><b id="ov-solar">–</b><span>W/m²</span></div>
+        <div><label>Accumulated</label><b id="ov-accum">–</b><span>MJ/m²</span></div>
+        <div><label>Air temp</label><b id="ov-htemp">–</b><span class="unitT">°F</span></div>
+        <div><label>RH</label><b id="ov-hrh">–</b><span>%</span></div>
+        <div class="foot" id="ov-hfoot">no data</div>
+      </div>
+    </div>
   </section>
 
   <!-- ========================================================= trends -->
-  <section id="page-trends" class="page">
+  <section id="page-temp" class="page">
     <div class="toolbar">
-      <div class="seg" id="tr-window">
+      <div class="seg win-seg" id="tr-window">
         <button data-w="600">10 m</button>
         <button data-w="3600" class="active">1 h</button>
         <button data-w="21600">6 h</button>
@@ -87,22 +103,28 @@
         <button data-u="F" class="active">°F</button>
         <button data-u="C">°C</button>
       </div>
-      <span class="muted" id="tr-info"></span>
+      <span class="muted info" id="info-temp"></span>
     </div>
-    <div id="charts"></div>
+    <div class="charts" id="charts-temp"></div>
   </section>
 
   <!-- =========================================================== wind -->
   <section id="page-wind" class="page">
     <div class="toolbar">
+      <div class="seg" id="wind-view">
+        <button data-v="rose" class="active">Rose</button>
+        <button data-v="ts">Time series</button>
+      </div>
       <div class="seg" id="wr-window">
-        <button data-w="600" class="active">10 m</button>
+        <button data-w="600">10 m</button>
         <button data-w="3600">1 h</button>
         <button data-w="21600">6 h</button>
         <button data-w="86400">24 h</button>
       </div>
+      <span class="muted info" id="info-wind"></span>
     </div>
-    <div class="wind-body">
+    <div class="charts" id="charts-wind" hidden></div>
+    <div class="wind-body" id="wind-rose">
       <canvas id="rose"></canvas>
       <div class="wind-side">
         <div class="kv1"><label>Mean</label><b id="wr-mean">–</b><span>m/s</span></div>
@@ -113,6 +135,28 @@
         <div id="rose-legend"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ========================================================== solar -->
+  <section id="page-solar" class="page">
+    <div class="toolbar">
+      <div class="seg win-seg" id="so-window">
+        <button data-w="600">10 m</button>
+        <button data-w="3600" class="active">1 h</button>
+        <button data-w="21600">6 h</button>
+        <button data-w="86400">24 h</button>
+      </div>
+      <span class="muted info" id="info-solar"></span>
+    </div>
+    <div class="solar-stats">
+      <div class="kv1 big"><label>Irradiance now</label><b id="so-now">–</b><span>W/m²</span></div>
+      <div class="kv1"><label>Peak in window</label><b id="so-peak">–</b><span>W/m²</span></div>
+      <div class="kv1"><label>Accumulated</label><b id="so-accum">–</b><span>MJ/m²</span></div>
+      <div class="kv1"><label>HOBO air</label><b id="so-t">–</b><span class="unitT">°F</span></div>
+      <div class="kv1"><label>HOBO RH</label><b id="so-rh">–</b><span>%</span></div>
+      <div class="kv1"><label>ch 0x0d (unidentified)</label><b id="so-0d">–</b></div>
+    </div>
+    <div class="charts" id="charts-solar"></div>
   </section>
 
   <!-- ========================================================= system -->

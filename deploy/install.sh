@@ -3,7 +3,8 @@
 # image). Safe to re-run; deploy/update.sh re-runs it after every pull.
 #
 #   ./deploy/install.sh              full install
-#   ./deploy/install.sh --quick      skip apt (used by update.sh; works offline)
+#   ./deploy/install.sh --quick      skip apt unless a required package is
+#                                    missing (used by update.sh; works offline)
 #   ./deploy/install.sh --no-kiosk   headless: no touchscreen browser
 #
 # Run as the normal desktop user (not with sudo); it calls sudo itself.
@@ -29,15 +30,31 @@ cd "$REPO"
 
 step() { printf '\n== %s\n' "$*"; }
 
-if [ "$QUICK" -eq 0 ]; then
-  step "packages"
+# python3-bleak + bluez: HOBO MX2309 over Bluetooth LE (beacon_station/hobo.py)
+PKGS="python3-serial python3-bleak bluez git curl"
+MISSING=""
+for p in $PKGS; do
+  dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"
+done
+if [ "$QUICK" -eq 0 ] || [ -n "$MISSING" ]; then
+  step "packages${MISSING:+ (missing:$MISSING)}"
   sudo apt-get update -qq || echo "   (apt update failed — offline? continuing)"
-  sudo apt-get install -y python3-serial git curl
-  if [ "$KIOSK" -eq 1 ] && ! command -v chromium-browser >/dev/null \
-      && ! command -v chromium >/dev/null; then
-    sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser
-  fi
+  sudo apt-get install -y $PKGS || echo "   (some packages failed to install — see above)"
 fi
+if [ "$QUICK" -eq 0 ] && [ "$KIOSK" -eq 1 ] && ! command -v chromium-browser >/dev/null \
+    && ! command -v chromium >/dev/null; then
+  sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser
+fi
+
+step "Bluetooth (for the HOBO)"
+# Raspberry Pi OS ships with the radio soft-blocked; the unblock persists.
+sudo rfkill unblock bluetooth 2>/dev/null || true
+sudo systemctl enable --now bluetooth >/dev/null 2>&1 || true
+if getent group bluetooth >/dev/null && ! id -nG "$USER_NAME" | grep -qw bluetooth; then
+  sudo usermod -aG bluetooth "$USER_NAME"
+  echo "   added $USER_NAME to the bluetooth group"
+fi
+echo "   radio: $(rfkill list bluetooth 2>/dev/null | grep -q 'Soft blocked: yes' && echo blocked || echo on)"
 
 step "serial port permission (dialout group)"
 if id -nG "$USER_NAME" | grep -qw dialout; then
@@ -63,8 +80,12 @@ else
 fi
 
 step "systemd services"
+# Only name groups that exist: systemd refuses to start a unit otherwise.
+GROUPS_SVC="dialout"
+getent group bluetooth >/dev/null && GROUPS_SVC="$GROUPS_SVC bluetooth"
 for unit in beacon-logger beacon-web; do
-  sed -e "s|@USER@|$USER_NAME|g" -e "s|@REPO@|$REPO|g" "deploy/$unit.service" \
+  sed -e "s|@USER@|$USER_NAME|g" -e "s|@REPO@|$REPO|g" \
+      -e "s|@GROUPS@|$GROUPS_SVC|g" "deploy/$unit.service" \
     | sudo tee "/etc/systemd/system/$unit.service" >/dev/null
 done
 sudo systemctl daemon-reload

@@ -1,12 +1,12 @@
-# Installed by deploy/install.sh (@USER@ / @REPO@ are substituted).
+# Installed by deploy/install.sh (@USER@ / @REPO@ / @GROUPS@ are substituted).
 [Unit]
 Description=BEACON station logger (serial instruments -> CSV)
-After=local-fs.target
+After=local-fs.target bluetooth.target
 
 [Service]
 Type=simple
 User=@USER@
-SupplementaryGroups=dialout
+SupplementaryGroups=@GROUPS@
 WorkingDirectory=@REPO@
 ExecStart=/usr/bin/python3 -m beacon_station.logger
 Environment=PYTHONUNBUFFERED=1

@@ -38,7 +38,9 @@ LOOPBACK = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 BEACON_KEYS = ("TMP119_C", "SHT3x_C", "HDC3022_C", "comp_temp_C", "WBGT_C",
                "RH_pct", "P_hPa")
 # A gap longer than this (s) between plotted points is drawn as a break.
-GAP_S = {"beacon": 60.0, "anemo": 10.0}
+HOBO_KEYS = ("hobo_T_C", "hobo_RH_pct", "solar_Wm2", "solar_accum_MJm2",
+             "hobo_ch0d")
+GAP_S = {"beacon": 60.0, "anemo": 10.0, "hobo": 180.0}
 ROSE_SECTORS = 16
 ROSE_CLASSES = (0.5, 1.5, 3.0, 5.0)  # m/s upper edges; last class is open
 
@@ -57,9 +59,9 @@ class Store:
     def __init__(self, keep_s):
         self.keep_s = keep_s
         self.lock = threading.Lock()
-        self.t = {"beacon": [], "anemo": [], "event": []}
-        self.rows = {"beacon": [], "anemo": [], "event": []}
-        self.latest = {"beacon": None, "anemo": None}
+        self.t = {"beacon": [], "anemo": [], "hobo": [], "event": []}
+        self.rows = {"beacon": [], "anemo": [], "hobo": [], "event": []}
+        self.latest = {"beacon": None, "anemo": None, "hobo": None}
         self.status = None
         self.status_rx = None
         self.notes = []
@@ -101,6 +103,19 @@ class Store:
                         or t >= self.latest["anemo"]["t"]):
                     self.latest["anemo"] = {"t": t, "wind_ms": row[0],
                                             "wind_deg": row[1]}
+            elif src == "hobo":
+                row = tuple(_num(s.get(k)) for k in HOBO_KEYS)
+                self._insert("hobo", t, row)
+                # The two advertisement kinds carry different fields, so the
+                # latest view merges them, each field keeping its own value.
+                cur = dict(self.latest["hobo"] or {})
+                if t >= cur.get("t", 0):
+                    cur["t"] = t
+                    for k, v in zip(HOBO_KEYS, row):
+                        if v is not None:
+                            cur[k] = v
+                            cur[k + "_t"] = t
+                    self.latest["hobo"] = cur
             elif src == "event":
                 self._insert("event", t, (s.get("note", ""),))
 
@@ -229,6 +244,35 @@ def _beacon_reducer(rows):
     return out
 
 
+def _mean_reducer(rows):
+    out = []
+    for i in range(len(rows[0])):
+        vals = [r[i] for r in rows if r[i] is not None]
+        out.append(sum(vals) / len(vals) if vals else None)
+    return out
+
+
+def _hold_fields(ts, rows, max_age):
+    """HOBO rows alternate between two packet kinds with different fields,
+    so each field is empty every other row. For display, carry each field's
+    last value forward (up to max_age s); gap-marker rows (None) stay gaps.
+    Display only — the CSV keeps the rows exactly as received."""
+    out, last = [], {}
+    for t, r in zip(ts, rows):
+        if r is None:
+            out.append(None)
+            last = {}
+            continue
+        r = list(r)
+        for i, v in enumerate(r):
+            if v is not None:
+                last[i] = (t, v)
+            elif i in last and t - last[i][0] <= max_age:
+                r[i] = last[i][1]
+        out.append(r)
+    return out
+
+
 def _anemo_reducer(rows):
     spd = [r[0] for r in rows if r[0] is not None]
     dirs = [r[1] for r in rows if r[1] is not None and r[0]]
@@ -246,28 +290,35 @@ def history(store, window_s, points):
     with store.lock:
         bt, br = store.window("beacon", t0)
         at, ar = store.window("anemo", t0)
+        ht, hr = store.window("hobo", t0)
         et, er = store.window("event", t0)
         bt, br = list(bt), list(br)
         at, ar = list(at), list(ar)
+        ht, hr = list(ht), list(hr)
         events = [{"t": t, "note": r[0]} for t, r in zip(et, er)]
 
     bt2, br2 = reduce_series(bt, br, t0, t1, points, GAP_S["beacon"],
                              _beacon_reducer)
     at2, ar2 = reduce_series(at, ar, t0, t1, points, GAP_S["anemo"],
                              _anemo_reducer)
+    ht2, hr2 = reduce_series(ht, hr, t0, t1, points, GAP_S["hobo"],
+                             _mean_reducer)
+    hr2 = _hold_fields(ht2, hr2, GAP_S["hobo"])
 
     def cols(rows, n):
         return [[None if r is None else r[i] for r in rows] for i in range(n)]
 
     b = cols(br2, len(BEACON_KEYS))
     a = cols(ar2, 4)
+    h = cols(hr2, len(HOBO_KEYS))
     return {
         "t0": t0, "t1": t1,
         "beacon": {"t": bt2, **{k: b[i] for i, k in enumerate(BEACON_KEYS)}},
         "anemo": {"t": at2, "mean": a[0], "gust": a[1], "dir": a[2],
                   "zero": a[3]},
+        "hobo": {"t": ht2, **{k: h[i] for i, k in enumerate(HOBO_KEYS)}},
         "events": events,
-        "n_raw": {"beacon": len(bt), "anemo": len(at)},
+        "n_raw": {"beacon": len(bt), "anemo": len(at), "hobo": len(ht)},
     }
 
 
@@ -335,8 +386,8 @@ def make_handler(cfg, store, syscache, readonly=False):
     ctl_addr = ("127.0.0.1", cfg["net"]["control_port"])
     ui_cfg = {
         "stale": {n: [cfg[n]["stale_warn_s"], cfg[n]["stale_error_s"]]
-                  for n in ("beacon", "anemo")},
-        "enabled": {n: cfg[n]["enabled"] for n in ("beacon", "anemo")},
+                  for n in ("beacon", "anemo", "hobo")},
+        "enabled": {n: cfg[n]["enabled"] for n in ("beacon", "anemo", "hobo")},
         "event_labels": cfg["display"]["event_labels"],
         "history_hours": cfg["display"]["history_hours"],
         "readonly": readonly,

@@ -17,9 +17,7 @@ let unit = prefs.get("unit", "F");
 let page = "overview";
 let trWindow = +prefs.get("trWindow", 3600);
 let wrWindow = +prefs.get("wrWindow", 600);
-let charts = [];
-let xr = [0, 1];                // shared x range for trend charts
-let lastHist = null;
+let windView = prefs.get("windView", "rose");
 let lastRose = null;
 let tick = 0;
 
@@ -64,7 +62,8 @@ function health(inst) {
   if (!latest.status_rx || now - latest.status_rx > 10) return ["crit", "logger not running"];
   const rd = latest.status.readers?.[inst];
   if (rd && rd.state !== "connected") return ["crit", rd.state === "waiting" ? "port unavailable" : rd.state];
-  const t = latest.latest?.[inst]?.t;
+  // HOBO rows are only written on change/heartbeat; "heard" is fresher.
+  const t = rd?.last_seen ?? latest.latest?.[inst]?.t;
   if (t == null) return ["warn", "waiting for data"];
   const age = now - t;
   const [w, e] = CFG.stale[inst];
@@ -74,7 +73,7 @@ function health(inst) {
 }
 
 function paintHealth() {
-  for (const inst of ["beacon", "anemo"]) {
+  for (const inst of ["beacon", "anemo", "hobo"]) {
     const [lvl, text] = health(inst);
     const chip = $(`#chip-${inst}`);
     chip.className = `chip ${lvl}`;
@@ -118,6 +117,27 @@ function paintOverview() {
   $("#ov-afoot").textContent = a
     ? `sample ${hms(a.t)} (${ago(latest.now - a.t)} ago) · n=${st?.counts?.anemo ?? "–"} this run`
     : "no data";
+
+  const h = latest.latest.hobo;
+  $("#ov-solar").textContent = fmt(h?.solar_Wm2, 1);
+  $("#ov-accum").textContent = fmt(h?.solar_accum_MJm2, 4);
+  $("#ov-htemp").textContent = fmt(toT(h?.hobo_T_C), 1);
+  $("#ov-hrh").textContent = fmt(h?.hobo_RH_pct, 1);
+  const rd = st?.readers?.hobo;
+  $("#ov-hfoot").textContent = h
+    ? `heard ${ago(latest.now - (rd?.last_seen ?? h.t))} ago · n=${st?.counts?.hobo ?? "–"} this run`
+    : "no data";
+}
+
+function paintSolarNow() {
+  if (!latest) return;
+  const h = latest.latest.hobo;
+  $$(".unitT").forEach((el) => (el.textContent = `°${unit}`));
+  $("#so-now").textContent = fmt(h?.solar_Wm2, 1);
+  $("#so-accum").textContent = fmt(h?.solar_accum_MJm2, 4);
+  $("#so-t").textContent = fmt(toT(h?.hobo_T_C), 1);
+  $("#so-rh").textContent = fmt(h?.hobo_RH_pct, 1);
+  $("#so-0d").textContent = fmt(h?.hobo_ch0d, 3);
 }
 
 async function refreshOverviewWind() {
@@ -128,45 +148,81 @@ async function refreshOverviewWind() {
   } catch { /* shown via health chips */ }
 }
 
-/* ================================================================ trends */
-const SPECS = [
-  {
-    id: "temp", src: "beacon", h: 0.33, dec: 2, temp: true,
-    title: () => `Temperature °${unit}`,
-    series: [
-      { k: "TMP119_C", label: "TMP119", color: "--s1", w: 1.25 },
-      { k: "SHT3x_C", label: "SHT3x", color: "--s2", w: 1.25 },
-      { k: "HDC3022_C", label: "HDC3022", color: "--s3", w: 1.25 },
-      { k: "comp_temp_C", label: "compensated", color: "--s4", w: 2.5 },
-      { k: "WBGT_C", label: "WBGT", color: "--s5", w: 2, dash: [6, 4] },
+/* ================================================================ charts */
+/* Chart groups, one per page. A series may come from a different source
+   than its chart's default (e.g. HOBO temperature on the BEACON chart);
+   such charts get their sources merged onto one x axis (see joinSources). */
+const HOBO = "--s6";   // the HOBO keeps one colour on every chart
+const GROUPS = {
+  temp: {
+    host: "#charts-temp", info: "#info-temp",
+    specs: [
+      {
+        id: "temp", src: "beacon", h: 0.64, dec: 2, temp: true, labels: true,
+        title: () => `Temp °${unit}`,
+        series: [
+          { k: "TMP119_C", label: "TMP119", color: "--s1", w: 1.25 },
+          { k: "SHT3x_C", label: "SHT3x", color: "--s2", w: 1.25 },
+          { k: "HDC3022_C", label: "HDC3022", color: "--s3", w: 1.25 },
+          { k: "comp_temp_C", label: "comp", color: "--s4", w: 2.5 },
+          { k: "WBGT_C", label: "WBGT", color: "--s5", w: 2, dash: [6, 4] },
+          { k: "hobo_T_C", src: "hobo", label: "HOBO", color: HOBO, w: 2, dash: [2, 3] },
+        ],
+      },
+      {
+        id: "rh", src: "beacon", h: 0.36, dec: 1, xaxis: true,
+        title: () => "RH %",
+        series: [
+          { k: "RH_pct", label: "BEACON", color: "--s1", w: 1.5 },
+          { k: "hobo_RH_pct", src: "hobo", label: "HOBO", color: HOBO, w: 2, dash: [2, 3] },
+        ],
+      },
     ],
   },
-  {
-    id: "rh", src: "beacon", h: 0.15, dec: 1, y: [0, 100],
-    title: () => "RH %",
-    series: [{ k: "RH_pct", label: "RH", color: "--s1", w: 1.5 }],
-  },
-  {
-    id: "wind", src: "anemo", h: 0.22, dec: 2, y0: true,
-    title: () => "Wind m/s",
-    series: [
-      { k: "mean", label: "mean", color: "--s1", w: 1.5 },
-      { k: "gust", label: "max", color: "--s2", w: 1, dash: [3, 3] },
-      { k: "zero", label: "deadband", color: "--muted", points: true },
+  wind: {
+    host: "#charts-wind", info: "#info-wind", windowVar: () => wrWindow,
+    specs: [
+      {
+        id: "wind", src: "anemo", h: 0.55, dec: 2, y0: true, labels: true,
+        title: () => "Wind m/s",
+        series: [
+          { k: "mean", label: "mean", color: "--s1", w: 1.5 },
+          { k: "gust", label: "max", color: "--s2", w: 1, dash: [3, 3] },
+          { k: "zero", label: "deadband", color: "--muted", points: true },
+        ],
+      },
+      {
+        id: "dir", src: "anemo", h: 0.45, dec: 0, y: [0, 360], dir: true, xaxis: true,
+        title: () => "Direction (from)",
+        series: [{ k: "dir", label: "dir", color: "--s1", points: true }],
+      },
     ],
   },
-  {
-    id: "dir", src: "anemo", h: 0.30, dec: 0, y: [0, 360], dir: true, xaxis: true,
-    title: () => "Direction (from)",
-    series: [{ k: "dir", label: "dir", color: "--s1", points: true }],
+  solar: {
+    host: "#charts-solar", info: "#info-solar",
+    specs: [
+      {
+        id: "solar", src: "hobo", h: 0.66, dec: 1, y0: true, labels: true,
+        title: () => "Solar irradiance W/m²",
+        series: [{ k: "solar_Wm2", label: "irradiance", color: HOBO, w: 2 }],
+      },
+      {
+        id: "accum", src: "hobo", h: 0.34, dec: 4, xaxis: true,
+        title: () => "Accumulated MJ/m²",
+        series: [{ k: "solar_accum_MJm2", label: "accumulated", color: HOBO, w: 1.5 }],
+      },
+    ],
   },
-];
+};
+const built = {};      // group -> [{spec, u, legend}]
+const lastHist = {};   // group -> /api/history response
+let xr = [0, 1];
 
-function eventsPlugin(labels) {
+function eventsPlugin(group, labels) {
   return {
     hooks: {
       draw: [(u) => {
-        const ev = lastHist?.events ?? [];
+        const ev = lastHist[group]?.events ?? [];
         if (!ev.length) return;
         const ctx = u.ctx;
         const { top, height } = u.bbox;
@@ -195,18 +251,19 @@ function eventsPlugin(labels) {
   };
 }
 
-function buildCharts() {
-  for (const c of charts) c.u.destroy();
-  charts = [];
-  const host = $("#charts");
+function buildGroup(g) {
+  for (const c of built[g] ?? []) c.u.destroy();
+  built[g] = [];
+  const host = $(GROUPS[g].host);
   host.innerHTML = "";
   const H = host.clientHeight;
   const W = host.clientWidth;
+  if (!H || !W) { delete built[g]; return; }   // page not visible yet
   const muted = cssv("--muted");
   const grid = cssv("--grid");
   const font = "11px system-ui";
 
-  for (const spec of SPECS) {
+  for (const spec of GROUPS[g].specs) {
     const wrap = document.createElement("div");
     wrap.className = "chart";
     const legend = document.createElement("div");
@@ -234,7 +291,7 @@ function buildCharts() {
       width: W,
       height: Math.max(60, Math.floor(H * spec.h) - 20),
       legend: { show: false },
-      cursor: { sync: { key: "trends" }, drag: { x: false, y: false }, points: { size: 7 } },
+      cursor: { sync: { key: `g-${g}` }, drag: { x: false, y: false }, points: { size: 7 } },
       scales: { x: { time: true, auto: false, range: () => xr }, y: { auto: true, ...yScale } },
       axes: [xAxis, yAxis],
       series: [{}, ...spec.series.map((s) => {
@@ -246,15 +303,19 @@ function buildCharts() {
             : { points: { show: false } }),
         };
       })],
-      plugins: [eventsPlugin(spec.id === "temp")],
+      plugins: [eventsPlugin(g, !!spec.labels)],
       hooks: { setCursor: [(u) => paintLegend(spec, u, legend)] },
     };
     const empty = [[], ...spec.series.map(() => [])];
     const u = new uPlot(opts, empty, wrap);
-    charts.push({ spec, u, legend });
+    built[g].push({ spec, u, legend });
     paintLegend(spec, u, legend);
   }
-  if (lastHist) paintTrends();
+  if (lastHist[g]) paintGroup(g);
+}
+
+function rebuildAll() {
+  for (const g of Object.keys(built)) buildGroup(g);
 }
 
 function paintLegend(spec, u, el) {
@@ -263,8 +324,9 @@ function paintLegend(spec, u, el) {
   spec.series.forEach((s, i) => {
     const ys = u.data[i + 1] ?? [];
     let v = null;
-    if (idx != null) v = ys[idx];
-    else for (let j = ys.length - 1; j >= 0; j--) if (ys[j] != null) { v = ys[j]; break; }
+    // At the cursor, or the latest value; merged charts have holes
+    // (undefined) where another source has a point, so search back.
+    for (let j = idx ?? ys.length - 1; j >= 0; j--) if (ys[j] != null) { v = ys[j]; break; }
     const cls = s.points ? "sw dot" : s.dash ? "sw dash" : "sw";
     const col = cssv(s.color);
     const val = spec.dir && v != null ? `${cardinal(v)} ${fmt(v, 0)}°` : fmt(v, spec.dec);
@@ -275,25 +337,81 @@ function paintLegend(spec, u, el) {
   el.innerHTML = parts.join("");
 }
 
-function paintTrends() {
-  if (!charts.length || !lastHist) return;
-  xr = [lastHist.t0, lastHist.t1];
-  for (const { spec, u, legend } of charts) {
-    const src = lastHist[spec.src];
-    const data = [src.t, ...spec.series.map((s) => (spec.temp ? src[s.k].map(toT) : src[s.k]))];
-    u.setData(data, true);
-    paintLegend(spec, u, legend);
+/* Merge several sources' [t, ...ys] onto their union of timestamps. Where a
+   source has no point, the value is left undefined, which uPlot draws
+   through; the explicit nulls the server inserts at real dropouts stay
+   null and still break the line. */
+function joinSources(parts) {
+  if (parts.length === 1) return [parts[0].t, ...parts[0].ys];
+  const xs = [...new Set(parts.flatMap((p) => p.t))].sort((a, b) => a - b);
+  const at = new Map(xs.map((x, i) => [x, i]));
+  const out = [xs];
+  for (const p of parts) {
+    for (const y of p.ys) {
+      const col = new Array(xs.length);
+      p.t.forEach((x, j) => { col[at.get(x)] = y[j]; });
+      out.push(col);
+    }
   }
-  const n = lastHist.n_raw;
-  $("#tr-info").textContent = `${n.beacon} beacon · ${n.anemo} anemo samples in window`;
+  return out;
 }
 
-async function refreshTrends() {
+function seriesData(h, spec) {
+  // Group this chart's series by source, preserving series order.
+  const bySrc = new Map();
+  spec.series.forEach((s, i) => {
+    const src = s.src ?? spec.src;
+    if (!bySrc.has(src)) bySrc.set(src, []);
+    bySrc.get(src).push(i);
+  });
+  const order = [];
+  const parts = [];
+  for (const [src, idxs] of bySrc) {
+    const d = h[src];
+    parts.push({
+      t: d.t,
+      ys: idxs.map((i) => {
+        const s = spec.series[i];
+        return spec.temp ? d[s.k].map(toT) : d[s.k];
+      }),
+    });
+    order.push(...idxs);
+  }
+  const joined = joinSources(parts);
+  // Put the columns back in the spec's series order.
+  const cols = new Array(spec.series.length);
+  order.forEach((si, j) => { cols[si] = joined[j + 1]; });
+  return [joined[0], ...cols];
+}
+
+function paintGroup(g) {
+  const h = lastHist[g];
+  if (!built[g] || !h) return;
+  xr = [h.t0, h.t1];
+  for (const { spec, u, legend } of built[g]) {
+    u.setData(seriesData(h, spec), true);
+    paintLegend(spec, u, legend);
+  }
+  const n = h.n_raw;
+  const info = { temp: `${n.beacon} beacon · ${n.hobo} hobo`, wind: `${n.anemo} anemo`, solar: `${n.hobo} hobo` }[g];
+  $(GROUPS[g].info).textContent = `${info} samples in window`;
+  if (g === "solar") paintSolarStats(h);
+}
+
+async function refreshGroup(g) {
+  const host = $(GROUPS[g].host);
+  if (!host || host.hidden) return;
   try {
-    const pts = Math.min(1200, Math.max(200, $("#charts").clientWidth));
-    lastHist = await getJSON(`/api/history?window=${trWindow}&points=${pts}`);
-    if (!charts.length) buildCharts(); else paintTrends();
+    const win = GROUPS[g].windowVar ? GROUPS[g].windowVar() : trWindow;
+    const pts = Math.min(1200, Math.max(200, host.clientWidth));
+    lastHist[g] = await getJSON(`/api/history?window=${win}&points=${pts}`);
+    if (!built[g]) buildGroup(g); else paintGroup(g);
   } catch (e) { /* health chips show connectivity */ }
+}
+
+function paintSolarStats(h) {
+  const s = h.hobo.solar_Wm2.filter((v) => v != null);
+  $("#so-peak").textContent = s.length ? fmt(Math.max(...s), 1) : "–";
 }
 
 /* ================================================================ wind rose */
@@ -418,12 +536,15 @@ async function refreshSystem() {
     row("Running for", ago(latest.now - st.started));
     row("File", st.file ?? "(opens on first sample)");
     row("Rows in file", st.file_rows);
-    for (const inst of ["beacon", "anemo"]) {
+    const NAMES = { beacon: "BEACON", anemo: "Anemometer", hobo: "HOBO MX2309" };
+    for (const inst of ["beacon", "anemo", "hobo"]) {
       const rd = st.readers?.[inst];
-      if (!rd) { row(inst, "disabled"); continue; }
+      if (!rd) { row(NAMES[inst], "disabled"); continue; }
       const [lvl, text] = health(inst);
-      row(inst === "beacon" ? "BEACON" : "Anemometer",
-        `${ICON[lvl]} ${text}<br><span class="muted">${rd.port}${rd.detail ? " — " + rd.detail : ""}</span>`, lvl);
+      const extra = inst === "hobo" && rd.address
+        ? `<br><span class="muted">${rd.address}${rd.serial ? " · SN " + rd.serial : ""}</span>` : "";
+      row(NAMES[inst],
+        `${ICON[lvl]} ${text}<br><span class="muted">${rd.port}${rd.detail && rd.detail !== rd.port ? " — " + rd.detail : ""}</span>${extra}`, lvl);
     }
   } else {
     row("State", "NOT RUNNING — no status from beacon-logger", "crit");
@@ -482,7 +603,7 @@ function toggleTheme() {
   const light = document.documentElement.dataset.theme !== "light";
   document.documentElement.dataset.theme = light ? "light" : "dark";
   prefs.set("theme", light ? "light" : "dark");
-  if (charts.length) buildCharts();
+  rebuildAll();
   refreshSystem();
 }
 
@@ -496,8 +617,9 @@ function showPage(p) {
 
 function refreshPage() {
   if (page === "overview") refreshOverviewWind();
-  else if (page === "trends") refreshTrends();
-  else if (page === "wind") refreshWind();
+  else if (page === "temp") refreshGroup("temp");
+  else if (page === "wind") { if (windView === "rose") refreshWind(); else refreshGroup("wind"); }
+  else if (page === "solar") { paintSolarNow(); refreshGroup("solar"); }
   else if (page === "system") refreshSystem();
 }
 
@@ -520,12 +642,13 @@ async function poll() {
   }
   paintHealth();
   if (page === "overview") paintOverview();
+  if (page === "solar") paintSolarNow();
   if (++tick % 5 === 0) refreshPage();
 }
 
 function clock() {
   const d = new Date();
-  $("#clock").textContent = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  $("#clock").textContent = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
 async function init() {
@@ -533,9 +656,25 @@ async function init() {
   $("#compass .ticks").innerHTML = Array.from({ length: 12 }, (_, i) =>
     `<line y1="-50" y2="${i % 3 ? -46 : -43}" transform="rotate(${i * 30})"/>`).join("");
   $$("#tabs button").forEach((b) => (b.onclick = () => showPage(b.dataset.page)));
-  segment("#tr-window", "w", trWindow, (w) => { trWindow = +w; prefs.set("trWindow", w); refreshTrends(); });
-  segment("#wr-window", "w", wrWindow, (w) => { wrWindow = +w; prefs.set("wrWindow", w); refreshWind(); });
-  segment("#unit-toggle", "u", unit, (u) => { unit = u; prefs.set("unit", u); if (charts.length) buildCharts(); paintOverview(); });
+  // Temp/RH and Solar share one time window; Wind has its own.
+  const pickTr = (w) => {
+    trWindow = +w; prefs.set("trWindow", w);
+    $$(".win-seg button").forEach((b) => b.classList.toggle("active", b.dataset.w === String(w)));
+    refreshPage();
+  };
+  segment("#tr-window", "w", trWindow, pickTr);
+  segment("#so-window", "w", trWindow, pickTr);
+  segment("#wr-window", "w", wrWindow, (w) => { wrWindow = +w; prefs.set("wrWindow", w); refreshPage(); });
+  const setWindView = (v) => {
+    windView = v; prefs.set("windView", v);
+    $("#wind-rose").hidden = v !== "rose";
+    $("#charts-wind").hidden = v !== "ts";
+    refreshPage();
+  };
+  segment("#wind-view", "v", windView, setWindView);
+  $("#wind-rose").hidden = windView !== "rose";
+  $("#charts-wind").hidden = windView !== "ts";
+  segment("#unit-toggle", "u", unit, (u) => { unit = u; prefs.set("unit", u); rebuildAll(); paintOverview(); paintSolarNow(); });
 
   $("#markBtn").onclick = () => ($("#modal").hidden = false);
   $("#modalCancel").onclick = () => ($("#modal").hidden = true);
@@ -544,7 +683,7 @@ async function init() {
   let resizeT;
   window.addEventListener("resize", () => {
     clearTimeout(resizeT);
-    resizeT = setTimeout(() => { if (charts.length) buildCharts(); if (page === "wind") paintRose(); }, 200);
+    resizeT = setTimeout(() => { rebuildAll(); if (page === "wind" && windView === "rose") paintRose(); }, 200);
   });
 
   for (;;) {

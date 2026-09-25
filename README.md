@@ -8,6 +8,10 @@ touchscreen and logs:
   bursts, about every 10 s).
 - **XinFeng XF502/AB ultrasonic anemometer**: through the Teensy RS-485 bridge,
   as CSV.
+- **HOBO MX2309** (temperature, RH, and solar via an LI-COR LI-200R
+  pyranometer): heard over Bluetooth LE. The Pi only listens to the
+  logger's broadcasts; it doesn't connect or pair. See
+  [HOBO MX2309](#hobo-mx2309-bluetooth).
 
 It writes one sparse CSV per day and shows a live dashboard on the
 touchscreen. The same dashboard can be opened from any browser on the same
@@ -51,7 +55,8 @@ bundled in `web/vendor/` so the dashboard works offline.
    ./deploy/install.sh
    ```
 
-   This installs `python3-serial` and Chromium, adds you to `dialout`,
+   This installs `python3-serial`, `python3-bleak` and Chromium, switches
+   Bluetooth on, adds you to `dialout`,
    creates `config.toml`, installs and starts both services, and sets the
    kiosk to launch at desktop login.
    - If the repository is private, the Pi needs read access: a read-only
@@ -134,9 +139,10 @@ wrote it.
 
 | Page | Shows |
 |---|---|
-| **Overview** | Current compensated temperature, WBGT, RH, pressure, and the three raw temperatures; wind speed, direction (compass arrow shows the flow; its tail is the bearing the wind comes *from*), and 10-minute mean and gust. |
-| **Trends** | Temperature, RH, wind speed, and direction over 10 min, 1 h, 6 h, or 24 h, with a °F/°C toggle. Tap a chart to read values at that time. Event markers appear as dashed lines. |
-| **Wind** | Wind rose (16 sectors × speed classes), mean, gust, prevailing direction, and calm fraction. |
+| **Overview** | BEACON: compensated temperature, WBGT, RH, pressure, and the three raw temperatures. Anemometer: speed, direction (the compass arrow shows the flow; its tail is the bearing the wind comes *from*), and 10-minute mean and gust. HOBO strip: solar, accumulated solar, air temperature, and RH. |
+| **Temp/RH** | BEACON temperatures and RH, with the HOBO's temperature and RH overlaid (green, dotted) for comparison. Window of 10 min, 1 h, 6 h, or 24 h; °F/°C toggle. Tap a chart to read values at that time. Event markers appear as dashed lines. |
+| **Wind** | **Rose**: 16 sectors × speed classes, with mean, gust, prevailing direction, and calm fraction. **Time series**: speed (mean, max, deadband) and direction. |
+| **Solar** | HOBO irradiance and accumulated solar over time; current irradiance, peak in the window, and the HOBO's air temperature and RH. Shares its time window with Temp/RH. |
 | **System** | Clock sync, logger state, per-port status, current file, CPU temperature, under-voltage/throttle flags, disk free, and recent messages. |
 
 The two chips in the top bar show instrument health as green `●` live,
@@ -183,12 +189,14 @@ downstream with `merge_asof` or resampling.
 | Column | Notes |
 |---|---|
 | `iso_time` | host time, **local, no offset**. Same format as the laptop tool. |
-| `source` | `beacon`, `anemo`, or `event` |
+| `source` | `beacon`, `anemo`, `hobo`, or `event` |
 | `TMP119_C` `SHT3x_C` `HDC3022_C` `RH_pct` `P_hPa` `comp_temp_C` `WBGT_C` | beacon rows, native °C |
 | `wind_ms` `wind_deg` | anemometer rows. `0.00` is the sensor's deadband (< ~0.3 m/s), not a measurement |
 | `utc_time` | *new:* same instant in UTC with `+00:00`. Unambiguous across DST and time zones; prefer it for merging |
 | `dev_uptime_s` | *new:* BEACON's own uptime stamp for the `Raw:` line, i.e. the device clock, free of USB latency |
 | `note` | *new:* event-marker label |
+| `hobo_T_C` `hobo_RH_pct` `solar_Wm2` `solar_accum_MJm2` `hobo_ch0d` | *schema 3:* `hobo` rows, decoded from the logger's broadcasts ([see below](#hobo-mx2309-bluetooth)) |
+| `hobo_addr` `hobo_raw` | *schema 3:* the Bluetooth address of the logger heard, and the raw broadcast bytes as hex |
 
 The first 11 columns are identical to the laptop tool's output, so existing
 readers (for example `beacon_replay_qt.py`) continue to work. New columns
@@ -203,7 +211,7 @@ on restart rather than appending to the old one.
 Everything runs on a laptop (Windows, macOS, or Linux) with Python ≥ 3.11:
 
 ```bash
-pip install pyserial
+pip install pyserial bleak
 python -m beacon_station.logger --simulate     # synthetic BEACON (replays tests/fixtures) + anemometer
 python -m beacon_station.web                   # then open http://localhost:8080/
 python -m unittest discover -s tests -t .      # parser / CSV / reduction tests
@@ -223,14 +231,58 @@ The largest cost is Chromium. For a single page, expect about
 measured on this Pi. That is comfortable on a 2 GB or larger Pi 4, and
 workable on 1 GB.
 
+## HOBO MX2309 (Bluetooth)
+
+The MX2309 continuously broadcasts its current readings over Bluetooth LE.
+`beacon-logger` listens for those broadcasts through BlueZ, using
+`python3-bleak`. It never connects to the logger, never pairs, and never
+touches the logger's stored data.
+
+**On the logger:** in HOBOconnect, turn on **Bluetooth Always On**. It
+costs battery life: about 2 years instead of 5 at a 1-minute logging
+interval.
+
+**The decoding is inferred, not documented by Onset.** It was worked out
+from captured packets, so treat the field meanings as a hypothesis until
+you've compared them against HOBOconnect:
+
+| Field | Source bytes | Confidence |
+|---|---|---|
+| `hobo_T_C` | packet A, float at byte 13 | high: matched room temperature (24.0 °C) |
+| `hobo_RH_pct` | packet A, float at byte 18, low byte omitted | medium: 48.6 %, plausible |
+| `solar_Wm2` | packet B, tag `0x0c` | medium: dropped when the sensor was covered |
+| `solar_accum_MJm2` | packet B, tag `0x10` | medium: only ever increases; the MJ/m² unit is inferred |
+| `hobo_ch0d` | packet B, tag `0x0d` | **unknown.** Reads 1.28–1.30. It isn't VPD computed from the logger's own T/RH (that would be about 1.54 kPa) |
+
+Every row stores `hobo_raw`, so any field can be re-decoded later if one
+turns out to be wrong. `beacon_station/hobo.py` documents the byte layout,
+and `tests/test_hobo.py` holds the captured packets.
+
+**Row frequency:** a row is written when a packet's contents change, or
+every `heartbeat_s` (60 s) otherwise, so steady readings (such as zero
+irradiance at night) still leave a regular record. The status chip tracks
+the last time the logger was *heard*, not the last row written.
+
+**Checking live values** (safe to run alongside the logger):
+
+```bash
+python3 -m tools.hobo_scan
+```
+
+It prints each changed packet with its decoded fields and raw bytes.
+
+If more than one HOBO is in range, set `[hobo] address` in `config.toml`
+to the logger's MAC address. `hobo_scan` and the System page both show it.
+
 ## Layout
 
 ```
 beacon_station/   logger.py (service), web.py (service), parsers.py, csvlog.py,
-                  serial_io.py (readers + simulators), sysinfo.py, config.py
+                  serial_io.py (readers + simulators), hobo.py (BLE listener),
+                  sysinfo.py, config.py
 web/              dashboard: index.html, app.js, style.css, vendor/uPlot
 deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, systemd units
-tools/            list_ports.py
+tools/            list_ports.py, hobo_scan.py
 tests/            unit tests + fixtures/beacon_capture.txt (real console capture)
 legacy/           original laptop logger (PyQt6), unchanged
 ```
@@ -240,4 +292,4 @@ legacy/           original laptop logger (PyQt6), unchanged
 - **Data sync to Google Drive**: upload finished daily files (rclone)
   whenever the Pi finds a network connection, with a status line and a
   "Sync now" button on the System page.
-- **Merge tooling**: TSI and HOBO import, and alignment against this CSV.
+- **Merge tooling**: TSI import, and alignment against this CSV.
