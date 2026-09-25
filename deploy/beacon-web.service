@@ -1,0 +1,16 @@
+# Installed by deploy/install.sh (@USER@ / @REPO@ are substituted).
+[Unit]
+Description=BEACON station dashboard server
+After=network.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 -m beacon_station.web
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

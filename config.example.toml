@@ -1,0 +1,40 @@
+# BEACON Station configuration.
+#
+# Copy to config.toml (git-ignored; deploy/install.sh does this once) and
+# edit. Every key is optional — anything omitted uses the built-in default
+# from beacon_station/config.py.
+#
+# Find stable port names with:   python3 -m tools.list_ports --sniff
+
+[beacon]
+enabled = true
+# Use the /dev/serial/by-id/... path: /dev/ttyUSB0 vs ttyACM0 numbering
+# can swap between boots, by-id names cannot.
+port = "/dev/ttyUSB0"
+baud = 115200
+stale_warn_s = 30        # status chip turns amber after this long without a burst
+stale_error_s = 120      # ... and red after this long
+
+[anemo]
+enabled = true
+port = "/dev/ttyACM0"
+baud = 115200
+stale_warn_s = 5
+stale_error_s = 30
+
+[logging]
+data_dir = "~/beacon_data"
+fsync_interval_s = 30    # rows are flushed immediately; fsync'd this often
+
+[net]
+data_port = 47811        # logger -> display, UDP on localhost
+control_port = 47812     # display -> logger (event markers), UDP on localhost
+web_host = "0.0.0.0"     # "127.0.0.1" restricts the dashboard to the Pi itself
+web_port = 8080
+
+[display]
+history_hours = 24
+event_labels = [
+  "TSI moved", "HOBO moved", "beacon moved", "calibration check",
+  "door opened", "rain", "maintenance", "other",
+]

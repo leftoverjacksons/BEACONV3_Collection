@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# One-time setup on a Raspberry Pi (Raspberry Pi OS Bookworm/Trixie, desktop
+# image). Safe to re-run; deploy/update.sh re-runs it after every pull.
+#
+#   ./deploy/install.sh              full install
+#   ./deploy/install.sh --quick      skip apt (used by update.sh; works offline)
+#   ./deploy/install.sh --no-kiosk   headless: no touchscreen browser
+#
+# Run as the normal desktop user (not with sudo); it calls sudo itself.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+QUICK=0
+KIOSK=1
+for a in "$@"; do
+  case "$a" in
+    --quick) QUICK=1 ;;
+    --no-kiosk) KIOSK=0 ;;
+    *) echo "unknown option $a"; exit 2 ;;
+  esac
+done
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Run as your normal user, not root/sudo (it uses sudo where needed)."
+  exit 1
+fi
+USER_NAME="$(id -un)"
+cd "$REPO"
+
+step() { printf '\n== %s\n' "$*"; }
+
+if [ "$QUICK" -eq 0 ]; then
+  step "packages"
+  sudo apt-get update -qq || echo "   (apt update failed — offline? continuing)"
+  sudo apt-get install -y python3-serial git curl
+  if [ "$KIOSK" -eq 1 ] && ! command -v chromium-browser >/dev/null \
+      && ! command -v chromium >/dev/null; then
+    sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser
+  fi
+fi
+
+step "serial port permission (dialout group)"
+if id -nG "$USER_NAME" | grep -qw dialout; then
+  echo "   $USER_NAME already in dialout"
+else
+  sudo usermod -aG dialout "$USER_NAME"
+  echo "   added $USER_NAME to dialout (takes effect at next login; the service has it already)"
+fi
+
+step "config"
+if [ -f config.toml ]; then
+  echo "   config.toml exists — left unchanged"
+else
+  cp config.example.toml config.toml
+  echo "   created config.toml from config.example.toml — set the serial ports in it"
+fi
+
+step "self-test"
+if python3 -m unittest discover -s tests -t . >/tmp/beacon-selftest.log 2>&1; then
+  echo "   tests pass"
+else
+  echo "   TESTS FAILED — see /tmp/beacon-selftest.log (installing anyway)"
+fi
+
+step "systemd services"
+for unit in beacon-logger beacon-web; do
+  sed -e "s|@USER@|$USER_NAME|g" -e "s|@REPO@|$REPO|g" "deploy/$unit.service" \
+    | sudo tee "/etc/systemd/system/$unit.service" >/dev/null
+done
+sudo systemctl daemon-reload
+sudo systemctl enable beacon-logger beacon-web >/dev/null
+sudo systemctl restart beacon-logger beacon-web
+sleep 2
+systemctl --no-pager --lines=0 status beacon-logger beacon-web | grep -E '●|Active:' || true
+
+AUTOSTART="$HOME/.config/autostart/beacon-kiosk.desktop"
+if [ "$KIOSK" -eq 1 ]; then
+  step "touchscreen kiosk (starts at desktop login)"
+  chmod +x deploy/kiosk.sh
+  mkdir -p "$(dirname "$AUTOSTART")"
+  cat >"$AUTOSTART" <<EOF
+[Desktop Entry]
+Type=Application
+Name=BEACON Station kiosk
+Exec=$REPO/deploy/kiosk.sh
+X-GNOME-Autostart-enabled=true
+EOF
+  echo "   $AUTOSTART"
+  echo "   (desktop auto-login must be on: raspi-config > System > Auto Login)"
+else
+  rm -f "$AUTOSTART"
+fi
+
+step "done"
+cat <<EOF
+   Logger log : journalctl -u beacon-logger -f
+   Dashboard  : http://$(hostname).local:8080/  (also on the touchscreen)
+   Data       : $(python3 -c 'from beacon_station import config; print(config.load()["logging"]["data_dir"])')
+   Ports      : sudo systemctl stop beacon-logger && python3 -m tools.list_ports --sniff
+EOF

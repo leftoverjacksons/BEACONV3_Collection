@@ -1,0 +1,20 @@
+# Installed by deploy/install.sh (@USER@ / @REPO@ are substituted).
+[Unit]
+Description=BEACON station logger (serial instruments -> CSV)
+After=local-fs.target
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=dialout
+WorkingDirectory=@REPO@
+ExecStart=/usr/bin/python3 -m beacon_station.logger
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+# SIGTERM -> flush and close the CSV cleanly.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

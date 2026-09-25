@@ -1,0 +1,40 @@
+[66:27:49.169,000] [0m<inf> noise_proc: Processed 45056 samples => [66:28:00.408,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 61.011700 dB[0m
+[66:28:00.616,000] [0m<inf> soc_estimator: SoC update: VBAT=3951 mV -> 800 permille (sigma=22 permille)[0m
+[66:28:00.919,000] [0m<inf> env_hs_sampler: Raw: TMP119=23.45 SHT3x=27.19 HDC3022=24.66 RH=50.41 P=997.19 hPa[0m
+[66:28:00.919,000] [0m<inf> env_hs_sampler: EMA: TMP119=23.602 SHT3x=27.322 HDC3022=24.772[0m
+[66:28:00.919,000] [0m<inf> env_hs_sampler: RoC: T1m=-0.076 T5m=-0.079 T10m=-0.070 S5m=-0.194 S10m=-0.293[0m
+[66:28:00.919,000] [0m<inf> env_hs_sampler: Deltas: Solar=3.720 Board=1.171 BQ25190=25842 mdegC[0m
+[66:28:00.919,000] [0m<inf> env_hs_sampler: Compensated temp: 24.113 degC (75.403 degF)[0m
+[66:28:00.920,000] [0m<inf> env_hs_sampler: HS Sample: T=75.40 deg F, 24.11 deg C H=50.41 WBGT=19.53[0m
+[66:28:00.920,000] [0m<dbg> app_core.app_thread_entry: Processing Event: 7[0m
+[66:28:00.920,000] [0m<inf> ehs_ez_engine: Flashing highest sev: current sev: 2, current led effect: 3 r: 0 g: 255 b: 0[0m
+[66:28:01.429,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 56.953129 dB[0m
+[66:28:02.451,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 52.966599 dB[0m
+[66:28:03.472,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 49.916481 dB[0m
+[66:28:04.494,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 47.425797 dB[0m
+[66:28:05.516,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 47.835617 dB[0m
+[66:28:06.028,000] [0m<dbg> modem_chat.modem_chat_log_received_command: +CEREG:  4[0m
+[66:28:06.078,000] [0m<dbg> modem_chat.modem_chat_log_received_command: +CEREG:  5 "2F02" "0B2E2D10" 7[0m
+[66:28:06.078,000] [0m<dbg> me310m1.me310m1_thread_fn: CEREG re-registered while PPP up[0m
+[66:28:06.078,000] [0m<dbg> modem_chat.modem_chat_on_unknown_command_received: +CREG: 5[0m
+[66:28:06.538,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 50.369373 dB[0m
+[66:28:09.602,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 45.337395 dB[0m
+[66:28:09.718,000] [1;33m<wrn> aws: Clean up[0m
+[66:28:10.084,000] [0m<dbg> modem_ppp.modem_ppp_process_received_byte: Receiving PPP frame[0m
+[66:28:10.284,000] [0m<inf> aws: Resolved: 54.197.86.197:8883
+[0m
+[66:28:10.616,000] [0m<inf> soc_estimator: SoC update: VBAT=3946 mV -> 800 permille (sigma=22 permille)[0m
+[66:28:10.624,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 46.351677 dB[0m
+[66:28:10.921,000] [0m<inf> env_hs_sampler: Raw: TMP119=23.45 SHT3x=27.24 HDC3022=24.66 RH=51.97 P=997.07 hPa[0m
+[66:28:10.921,000] [0m<inf> env_hs_sampler: EMA: TMP119=23.592 SHT3x=27.317 HDC3022=24.765[0m
+[66:28:10.921,000] [0m<inf> env_hs_sampler: RoC: T1m=-0.071 T5m=-0.089 T10m=-0.079 S5m=-0.186 S10m=-0.302[0m
+[66:28:10.921,000] [0m<inf> env_hs_sampler: Deltas: Solar=3.725 Board=1.173 BQ25190=25772 mdegC[0m
+[66:28:10.921,000] [0m<inf> env_hs_sampler: Compensated temp: 24.110 degC (75.398 degF)[0m
+[66:28:10.922,000] [0m<inf> env_hs_sampler: HS Sample: T=75.40 deg F, 24.11 deg C H=51.97 WBGT=19.70[0m
+[66:28:10.922,000] [0m<dbg> app_core.app_thread_entry: Processing Event: 7[0m
+[66:28:10.922,000] [0m<inf> ehs_ez_engine: Flashing highest sev: current sev: 2, current led effect: 3 r: 0 g: 255 b: 0[0m
+[66:28:11.090,000] [0m<dbg> modem_ppp.modem_ppp_process_received_byte: Receiving PPP frame[0m
+[66:28:11.646,000] [0m<inf> noise_proc: Processed 45056 samples => SPL = 46.008064 dB[0m
+[66:28:16.628,000] [0m<inf> me310m1: App ready — configuring eDRX[0m
+[66:28:16.628,000] [0m<dbg> modem_chat.modem_chat_script_next: sending: AT+CEDRXS=2,4,"0101"[0m
+[66:28:16.779,000] [0m<dbg> modem_chat.modem_chat_script_stop: edrx_script: complete[0m

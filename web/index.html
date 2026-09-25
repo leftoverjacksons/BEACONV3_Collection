@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BEACON Station</title>
+<link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="bar">
+  <nav id="tabs">
+    <button data-page="overview" class="active">Overview</button>
+    <button data-page="trends">Trends</button>
+    <button data-page="wind">Wind</button>
+    <button data-page="system">System</button>
+  </nav>
+  <div id="health">
+    <span class="chip" id="chip-beacon"><i></i>BEACON</span>
+    <span class="chip" id="chip-anemo"><i></i>ANEMO</span>
+  </div>
+  <div id="clock">--:--:--</div>
+  <button id="markBtn" title="Write a timestamped event marker to the log">Mark</button>
+</header>
+
+<main>
+  <!-- ======================================================= overview -->
+  <section id="page-overview" class="page active">
+    <div class="card" id="card-beacon">
+      <div class="card-head">
+        <h2>BEACON V3</h2>
+        <span class="state" id="st-beacon">–</span>
+      </div>
+      <div class="hero"><span id="ov-comp">–</span><small class="unitT">°F</small></div>
+      <div class="hero-label">compensated temperature</div>
+      <div class="kv3">
+        <div><label>WBGT</label><b id="ov-wbgt">–</b><span class="unitT">°F</span></div>
+        <div><label>RH</label><b id="ov-rh">–</b><span>%</span></div>
+        <div><label>Pressure</label><b id="ov-p">–</b><span>hPa</span></div>
+      </div>
+      <div class="raw">
+        <div><label>TMP119</label><b id="ov-tmp">–</b></div>
+        <div><label>SHT3x</label><b id="ov-sht">–</b></div>
+        <div><label>HDC3022</label><b id="ov-hdc">–</b></div>
+      </div>
+      <div class="foot" id="ov-bfoot">no data</div>
+    </div>
+
+    <div class="card" id="card-anemo">
+      <div class="card-head">
+        <h2>Anemometer</h2>
+        <span class="state" id="st-anemo">–</span>
+      </div>
+      <div class="anemo-body">
+        <div>
+          <div class="hero"><span id="ov-spd">–</span><small>m/s</small></div>
+          <div class="hero-label" id="ov-dirtxt">direction –</div>
+          <div class="kv2">
+            <div><label>10-min mean</label><b id="ov-mean">–</b><span>m/s</span></div>
+            <div><label>10-min gust</label><b id="ov-gust">–</b><span>m/s</span></div>
+          </div>
+        </div>
+        <svg id="compass" viewBox="-60 -60 120 120" aria-label="wind direction">
+          <circle r="50" class="ring"/>
+          <g class="ticks"></g>
+          <text y="-38" class="card">N</text><text x="40" y="4" class="card">E</text>
+          <text y="46" class="card">S</text><text x="-40" y="4" class="card">W</text>
+          <!-- tail on the rim at the bearing the wind comes FROM; head shows flow -->
+          <g id="needle"><line y1="-48" y2="-16"/><path d="M0,-4 L8,-20 L-8,-20 Z"/></g>
+          <circle r="3" class="hub"/>
+        </svg>
+      </div>
+      <div class="foot" id="ov-afoot">no data</div>
+    </div>
+  </section>
+
+  <!-- ========================================================= trends -->
+  <section id="page-trends" class="page">
+    <div class="toolbar">
+      <div class="seg" id="tr-window">
+        <button data-w="600">10 m</button>
+        <button data-w="3600" class="active">1 h</button>
+        <button data-w="21600">6 h</button>
+        <button data-w="86400">24 h</button>
+      </div>
+      <div class="seg" id="unit-toggle">
+        <button data-u="F" class="active">°F</button>
+        <button data-u="C">°C</button>
+      </div>
+      <span class="muted" id="tr-info"></span>
+    </div>
+    <div id="charts"></div>
+  </section>
+
+  <!-- =========================================================== wind -->
+  <section id="page-wind" class="page">
+    <div class="toolbar">
+      <div class="seg" id="wr-window">
+        <button data-w="600" class="active">10 m</button>
+        <button data-w="3600">1 h</button>
+        <button data-w="21600">6 h</button>
+        <button data-w="86400">24 h</button>
+      </div>
+    </div>
+    <div class="wind-body">
+      <canvas id="rose"></canvas>
+      <div class="wind-side">
+        <div class="kv1"><label>Mean</label><b id="wr-mean">–</b><span>m/s</span></div>
+        <div class="kv1"><label>Gust (max)</label><b id="wr-gust">–</b><span>m/s</span></div>
+        <div class="kv1"><label>Prevailing, from</label><b id="wr-prev">–</b></div>
+        <div class="kv1"><label>Calm (&lt; 0.5 m/s)</label><b id="wr-calm">–</b><span>%</span></div>
+        <div class="kv1"><label>Samples</label><b id="wr-n">–</b></div>
+        <div id="rose-legend"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================= system -->
+  <section id="page-system" class="page">
+    <div class="sys-grid">
+      <table id="sys-table"></table>
+      <div class="sys-right">
+      <table id="sys-table2"></table>
+      <div class="notes">
+        <h3>Recent messages</h3>
+        <ol id="sys-notes"></ol>
+      </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="modal" hidden>
+  <div class="sheet">
+    <h3>Mark event</h3>
+    <p class="muted">Writes a timestamped row (source = event) to the CSV.</p>
+    <div id="labels"></div>
+    <button id="modalCancel" class="ghost">Cancel</button>
+  </div>
+</div>
+<div id="toast" hidden></div>
+
+<script src="/static/vendor/uPlot.iife.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
