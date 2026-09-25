@@ -97,6 +97,16 @@ compare the time against a phone. The **System** page shows whether the
 clock is NTP-synchronised, and each CSV's `.meta.json` records the sync
 state at the moment the file was opened.
 
+### Leaving the kiosk
+
+**System** page → **Exit to desktop**. Logging continues. The button only
+appears on the Pi's own screen. To reopen the kiosk, double-tap the
+**BEACON Kiosk** icon on the desktop or reboot. From SSH, run
+`deploy/kiosk-exit.sh` to close it.
+
+The System page also lists the Pi's Wi-Fi network, its IP address, and its
+Tailscale address, with the matching `ssh` command for each.
+
 ### Screen
 
 - **Blanking:** `raspi-config` → *Display Options* → *Screen Blanking*. A
@@ -137,6 +147,27 @@ in `config.toml`.
 from a preset list (TSI moved, door opened, rain, and so on; editable in
 `config.toml`). Use it during comparison runs so the moments of
 disturbance can be found later.
+
+## Sharing the dashboard
+
+| Port | Who | What |
+|---|---|---|
+| 8080 | the touchscreen, and you on the LAN or Tailscale | the full dashboard, including **Mark** |
+| 8081 | anyone you share it with | the same dashboard, view-only: no Mark, no kiosk control, no network details |
+
+To give someone outside your network a link (they install nothing), use
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) on the view-only
+port:
+
+```bash
+sudo tailscale funnel --bg 8081     # prints https://<host>.<tailnet>.ts.net
+sudo tailscale funnel reset         # stop sharing
+```
+
+Funnel must be enabled for your tailnet first: HTTPS certificates must be
+on, and the tailnet policy must grant the `funnel` attribute (see below).
+Anyone who has the URL can view the dashboard. Nobody can change anything
+through it.
 
 ## Data format
 
@@ -198,7 +229,7 @@ workable on 1 GB.
 beacon_station/   logger.py (service), web.py (service), parsers.py, csvlog.py,
                   serial_io.py (readers + simulators), sysinfo.py, config.py
 web/              dashboard: index.html, app.js, style.css, vendor/uPlot
-deploy/           install.sh, update.sh, kiosk.sh, systemd units
+deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, systemd units
 tools/            list_ports.py
 tests/            unit tests + fixtures/beacon_capture.txt (real console capture)
 legacy/           original laptop logger (PyQt6), unchanged

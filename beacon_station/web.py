@@ -17,6 +17,7 @@ import json
 import math
 import mimetypes
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -30,6 +31,9 @@ from . import sysinfo
 from .csvlog import FILE_PREFIX
 
 WEB_ROOT = config_mod.REPO_ROOT / "web"
+# deploy/kiosk.sh exits instead of relaunching the browser if this exists.
+KIOSK_STOP_FLAG = "/tmp/beacon-kiosk.stop"
+LOOPBACK = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
 BEACON_KEYS = ("TMP119_C", "SHT3x_C", "HDC3022_C", "comp_temp_C", "WBGT_C",
                "RH_pct", "P_hPa")
@@ -316,7 +320,17 @@ class SysCache:
             return self.val
 
 
-def make_handler(cfg, store, syscache):
+def exit_kiosk():
+    """Close the touchscreen browser and keep it closed (until the desktop
+    launcher or a reboot starts deploy/kiosk.sh again)."""
+    with open(KIOSK_STOP_FLAG, "w"):
+        pass
+    subprocess.run(["pkill", "-f", "beacon-kiosk-profile"], check=False)
+
+
+def make_handler(cfg, store, syscache, readonly=False):
+    """readonly=True: the public/shared port. Same dashboard, but every
+    write (event markers, kiosk control) is refused and the UI hides it."""
     ctl = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     ctl_addr = ("127.0.0.1", cfg["net"]["control_port"])
     ui_cfg = {
@@ -325,6 +339,7 @@ def make_handler(cfg, store, syscache):
         "enabled": {n: cfg[n]["enabled"] for n in ("beacon", "anemo")},
         "event_labels": cfg["display"]["event_labels"],
         "history_hours": cfg["display"]["history_hours"],
+        "readonly": readonly,
     }
     max_window = cfg["display"]["history_hours"] * 3600
 
@@ -395,11 +410,24 @@ def make_handler(cfg, store, syscache):
                 with store.lock:
                     notes = list(store.notes)
                 return self._json({"sys": syscache.get(), "notes": notes,
-                                   "config_source": cfg["_source"]})
+                                   "config_source": cfg["_source"],
+                                   "local": self._is_local()})
             self.send_error(404)
+
+        def _is_local(self):
+            return self.client_address[0] in LOOPBACK
 
         def do_POST(self):
             u = urlparse(self.path)
+            if readonly:
+                return self._json({"ok": False, "error": "view-only"}, 403)
+            if u.path == "/api/kiosk/exit":
+                # Only the Pi's own screen may close its kiosk.
+                if not self._is_local():
+                    return self._json({"ok": False, "error":
+                                       "only from the Pi's own screen"}, 403)
+                exit_kiosk()
+                return self._json({"ok": True})
             if u.path != "/api/event":
                 return self.send_error(404)
             try:
@@ -433,13 +461,22 @@ def main(argv=None):
     n = seed_from_csv(store, cfg["logging"]["data_dir"], keep_s)
     print(f"seeded {n} rows from {cfg['logging']['data_dir']}", flush=True)
 
-    handler = make_handler(cfg, store,
-                           SysCache(cfg["logging"]["data_dir"]))
-    srv = ThreadingHTTPServer((cfg["net"]["web_host"], cfg["net"]["web_port"]),
-                              handler)
+    syscache = SysCache(cfg["logging"]["data_dir"])
+    host = cfg["net"]["web_host"]
+    srv = ThreadingHTTPServer((host, cfg["net"]["web_port"]),
+                              make_handler(cfg, store, syscache))
     srv.daemon_threads = True
-    print(f"serving on http://{cfg['net']['web_host']}:"
-          f"{cfg['net']['web_port']}/", flush=True)
+    print(f"serving on http://{host}:{cfg['net']['web_port']}/", flush=True)
+
+    ro_port = cfg["net"].get("readonly_port") or 0
+    if ro_port:
+        ro = ThreadingHTTPServer((host, ro_port),
+                                 make_handler(cfg, store, syscache,
+                                              readonly=True))
+        ro.daemon_threads = True
+        threading.Thread(target=ro.serve_forever, name="readonly",
+                         daemon=True).start()
+        print(f"view-only on http://{host}:{ro_port}/", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

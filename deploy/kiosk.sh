@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Full-screen dashboard on the Pi touchscreen. Started at desktop login via
-# ~/.config/autostart/beacon-kiosk.desktop (installed by install.sh).
-# Relaunches the browser if it exits; exits if another copy is running.
+# ~/.config/autostart/beacon-kiosk.desktop, or by the "BEACON Kiosk" desktop
+# icon (both installed by install.sh). Exits if another copy is running.
+#
+# Relaunches the browser if it crashes. The dashboard's System page has an
+# "Exit kiosk" button: it creates $STOP_FLAG and closes the browser, and this
+# script then exits instead of relaunching. From SSH:  deploy/kiosk-exit.sh
 
 URL="http://127.0.0.1:${BEACON_WEB_PORT:-8080}/"
 PROFILE="$HOME/.config/beacon-kiosk-profile"
+STOP_FLAG="/tmp/beacon-kiosk.stop"   # must match beacon_station/web.py
 
 exec 9>"/tmp/beacon-kiosk.lock"
 flock -n 9 || exit 0
+rm -f "$STOP_FLAG"
 
 BROWSER="$(command -v chromium-browser || command -v chromium)"
 if [ -z "$BROWSER" ]; then
@@ -39,5 +45,9 @@ while true; do
     --overscroll-history-navigation=0 --disable-pinch \
     --check-for-update-interval=31536000 \
     >/dev/null 2>&1
+  if [ -e "$STOP_FLAG" ]; then
+    rm -f "$STOP_FLAG"
+    exit 0
+  fi
   sleep 5
 done

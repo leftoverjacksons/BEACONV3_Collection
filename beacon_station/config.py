@@ -39,6 +39,9 @@ DEFAULTS = {
         "control_port": 47812,   # web -> logger (UDP, localhost)
         "web_host": "0.0.0.0",   # 127.0.0.1 = kiosk only, no LAN viewing
         "web_port": 8080,
+        # Same dashboard with all writes refused — the port to share
+        # publicly (e.g. Tailscale Funnel). 0 disables it.
+        "readonly_port": 8081,
     },
     "display": {
         "history_hours": 24,     # held in memory by the web server

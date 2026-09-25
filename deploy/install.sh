@@ -76,7 +76,7 @@ systemctl --no-pager --lines=0 status beacon-logger beacon-web | grep -E '●|Ac
 AUTOSTART="$HOME/.config/autostart/beacon-kiosk.desktop"
 if [ "$KIOSK" -eq 1 ]; then
   step "touchscreen kiosk (starts at desktop login)"
-  chmod +x deploy/kiosk.sh
+  chmod +x deploy/kiosk.sh deploy/kiosk-exit.sh
   mkdir -p "$(dirname "$AUTOSTART")"
   cat >"$AUTOSTART" <<EOF
 [Desktop Entry]
@@ -87,8 +87,30 @@ X-GNOME-Autostart-enabled=true
 EOF
   echo "   $AUTOSTART"
   echo "   (desktop auto-login must be on: raspi-config > System > Auto Login)"
+  # A launcher to reopen the kiosk after "Exit kiosk" (menu + desktop icon).
+  for dir in "$HOME/.local/share/applications" "$HOME/Desktop"; do
+    mkdir -p "$dir"
+    cat >"$dir/beacon-kiosk.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=BEACON Kiosk
+Comment=Open the BEACON dashboard full-screen
+Exec=$REPO/deploy/kiosk.sh
+Icon=utilities-system-monitor
+Terminal=false
+Categories=Utility;
+EOF
+    chmod +x "$dir/beacon-kiosk.desktop"
+  done
+  # pcmanfm asks "execute?" for desktop launchers unless told not to.
+  LIBFM="$HOME/.config/libfm/libfm.conf"
+  if [ -f "$LIBFM" ] && ! grep -q '^quick_exec=1' "$LIBFM"; then
+    sed -i '/^\[config\]/a quick_exec=1' "$LIBFM"
+  fi
+  echo "   'BEACON Kiosk' launcher on the desktop and in the menu"
 else
-  rm -f "$AUTOSTART"
+  rm -f "$AUTOSTART" "$HOME/.local/share/applications/beacon-kiosk.desktop" \
+    "$HOME/Desktop/beacon-kiosk.desktop"
 fi
 
 step "done"

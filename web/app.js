@@ -407,7 +407,7 @@ async function refreshSystem() {
   sep("Station");
   row("Host", s.hostname);
   row("Software", s.git ?? "unknown");
-  row("Config", r.config_source);
+  if (!CFG?.readonly) row("Config", r.config_source);
   row("Clock", new Date(s.time_utc * 1000).toLocaleString());
   row("Clock synced", s.clock_synced == null ? "unknown" : s.clock_synced ? "yes (NTP)" : "NO — check RTC / network",
     s.clock_synced ? "good" : s.clock_synced === false ? "warn" : "");
@@ -430,6 +430,18 @@ async function refreshSystem() {
   }
 
   const left = rows.splice(0);
+  const n = s.net;
+  if (n && !CFG?.readonly) {
+    // How to reach this Pi — shown here so it can be read off the screen.
+    sep("Network");
+    row("Wi-Fi", n.ssid ?? "not connected", n.ssid ? "good" : "warn");
+    row("IP address", n.lan_ips.length
+      ? n.lan_ips.map((ip) => `${ip}<br><span class="muted">ssh ${n.user}@${ip}</span>`).join("<br>")
+      : "none", n.lan_ips.length ? "" : "crit");
+    row("Tailscale", n.tailscale_ip
+      ? `${n.tailscale_ip}<br><span class="muted">ssh ${n.user}@${s.hostname}</span>`
+      : "off");
+  }
   sep("Host");
   const t = s.cpu_temp_c;
   row("CPU temp", t == null ? "n/a" : `${fmt(t, 1)} °C`, t == null ? "" : t >= 80 ? "crit" : t >= 70 ? "warn" : "good");
@@ -442,14 +454,28 @@ async function refreshSystem() {
   if (s.mem) row("Memory available", `${fmt(s.mem.avail_mb, 0)} / ${fmt(s.mem.total_mb, 0)} MB`);
   row("Uptime", ago(s.uptime_s));
   rows.push(`<tr class="sep"><th>Display</th><td><button id="themeBtn">${document.documentElement.dataset.theme === "light" ? "Dark theme" : "Light theme (sun)"}</button></td></tr>`);
+  // Only the Pi's own browser gets the exit button (the server enforces it too).
+  if (r.local && !CFG?.readonly) {
+    rows.push(`<tr><th>Kiosk</th><td><button id="exitKioskBtn">Exit to desktop</button><br><span class="muted">reopen: "BEACON Kiosk" icon, or reboot</span></td></tr>`);
+  }
 
   $("#sys-table").innerHTML = left.join("");
   $("#sys-table2").innerHTML = rows.join("");
   $("#themeBtn").onclick = toggleTheme;
+  const ex = $("#exitKioskBtn");
+  if (ex) ex.onclick = exitKiosk;
 
   $("#sys-notes").innerHTML = (r.notes || []).slice().reverse()
     .map((n) => `<li><time>${hms(n.t)}</time>${n.inst}: ${String(n.text).replace(/[<&]/g, (c) => ({ "<": "&lt;", "&": "&amp;" })[c])}</li>`)
     .join("") || `<li class="muted">none</li>`;
+}
+
+async function exitKiosk() {
+  if (!confirm("Close the full-screen dashboard and go to the desktop?\n\nLogging continues. Reopen with the \"BEACON Kiosk\" icon or by rebooting.")) return;
+  try {
+    const r = await getJSON("/api/kiosk/exit", { method: "POST" });
+    if (!r.ok) toast(`Exit failed: ${r.error}`);
+  } catch (e) { toast(`Exit failed: ${e.message}`); }
 }
 
 function toggleTheme() {
@@ -524,6 +550,13 @@ async function init() {
   for (;;) {
     try { CFG = await getJSON("/api/config"); break; }
     catch { latestOk = false; paintHealth(); await new Promise((r) => setTimeout(r, 2000)); }
+  }
+  if (CFG.readonly) {
+    $("#markBtn").remove();
+    const chip = document.createElement("span");
+    chip.className = "chip off";
+    chip.textContent = "view only";
+    $("#health").prepend(chip);
   }
   $("#labels").innerHTML = CFG.event_labels.map((l, i) => `<button data-i="${i}"></button>`).join("");
   $$("#labels button").forEach((b) => {

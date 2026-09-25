@@ -1,5 +1,6 @@
 """Host health readings. Every function degrades to None off-Pi."""
 
+import getpass
 import os
 import shutil
 import socket
@@ -78,6 +79,31 @@ def mem():
         return None
 
 
+def _ssid():
+    v = _run(["iwgetid", "-r"])
+    if v:
+        return v
+    for line in (_run(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"])
+                 or "").splitlines():
+        if line.startswith("yes:"):
+            return line[4:]
+    return None
+
+
+def network():
+    """Addresses to reach this Pi by: LAN IPs, Wi-Fi SSID, Tailscale IP."""
+    ips = (_run(["hostname", "-I"]) or "").split()
+    ips = [ip for ip in ips if ":" not in ip and not ip.startswith("127.")]
+    ts = _run(["tailscale", "ip", "-4"])
+    lan = [ip for ip in ips if ip != ts and not ip.startswith("100.")]
+    return {
+        "lan_ips": lan,
+        "ssid": _ssid(),
+        "tailscale_ip": ts.splitlines()[0] if ts else None,
+        "user": getpass.getuser(),
+    }
+
+
 def snapshot(data_dir):
     return {
         "hostname": socket.gethostname(),
@@ -90,4 +116,5 @@ def snapshot(data_dir):
         "uptime_s": uptime_s(),
         "git": git_version(),
         "pid": os.getpid(),
+        "net": network(),
     }
