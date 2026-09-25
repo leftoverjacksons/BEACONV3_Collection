@@ -24,11 +24,25 @@ as two alternating packet kinds (bytes after the company ID):
       tag 0x10  accumulated solar, MJ/m2 (monotonic)       (0.0081)
       tag 0x0d  UNIDENTIFIED (1.28-1.30). Not VPD: VPD from the logger's
                 own T/RH would be ~1.54 kPa. Logged as hobo_ch0d.
+
+How the packets are received matters. Kind A is the advertisement itself
+(ADV_IND); kind B appears to be the scan response. Both carry company ID
+0x00C5, and BlueZ keeps ONE manufacturer-data value per company per device,
+batching its D-Bus updates — so through BlueZ/bleak the scan response
+overwrites kind A before it is ever reported, and temp/RH go missing (seen
+in the field: bluetoothctl only ever showed 22-byte packets; btmon saw both).
+
+So the listener reads LE advertising reports straight off the HCI device
+with a raw socket (as btmon does), which sees every packet. That needs
+CAP_NET_RAW — the systemd unit grants it. BlueZ, driven through bleak with
+DuplicateData on, still runs the scan itself. Without the capability, or if
+the raw socket hears nothing, it falls back to the bleak path and says so.
 """
 
 import asyncio
 import math
 import random
+import socket
 import struct
 import threading
 import time
@@ -78,6 +92,90 @@ def decode(payload):
     return None, {}
 
 
+# ------------------------------------------------------------------ raw HCI
+HCI_EVENT_PKT = 0x04
+EVT_LE_META = 0x3E
+LE_ADV_REPORT = 0x02
+LE_EXT_ADV_REPORT = 0x0D
+CAP_NET_RAW = 13
+
+
+def mfr_data(ad, company=ONSET_COMPANY_ID):
+    """Manufacturer-specific data for `company` from raw advertising data
+    (a sequence of length/type/value structures), company ID stripped."""
+    i = 0
+    while i < len(ad):
+        ln = ad[i]
+        if ln == 0 or i + 1 + ln > len(ad):
+            break
+        if ad[i + 1] == 0xFF and ln >= 3 and \
+                int.from_bytes(ad[i + 2:i + 4], "little") == company:
+            return bytes(ad[i + 4:i + 1 + ln])
+        i += 1 + ln
+    return None
+
+
+def _bdaddr(b):
+    return ":".join(f"{x:02X}" for x in reversed(b))
+
+
+def parse_hci_event(pkt):
+    """Raw HCI event packet (leading 0x04 packet-type byte included) ->
+    [(address, onset_payload)] from LE (extended) advertising reports.
+    Reports are read sequentially, as the Linux kernel does."""
+    out = []
+    if len(pkt) < 5 or pkt[0] != HCI_EVENT_PKT or pkt[1] != EVT_LE_META:
+        return out
+    sub, body = pkt[3], pkt[4:]
+    try:
+        i = 1
+        for _ in range(body[0]):
+            if sub == LE_ADV_REPORT:
+                # type(1) addr_type(1) addr(6) len(1) data rssi(1)
+                addr, n = body[i + 2:i + 8], body[i + 8]
+                data = body[i + 9:i + 9 + n]
+                i += 10 + n
+            elif sub == LE_EXT_ADV_REPORT:
+                # type(2) addr_type(1) addr(6) phy(2) sid tx rssi
+                # interval(2) direct_type direct_addr(6) len(1) data
+                addr, n = body[i + 3:i + 9], body[i + 23]
+                data = body[i + 24:i + 24 + n]
+                i += 24 + n
+            else:
+                return out
+            if len(addr) < 6 or len(data) < n:
+                break
+            payload = mfr_data(data)
+            if payload:
+                out.append((_bdaddr(addr), payload))
+    except IndexError:
+        pass
+    return out
+
+
+def has_cap_net_raw():
+    """Without CAP_NET_RAW a raw HCI socket still opens, but the kernel
+    silently filters out LE events — so check up front."""
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("CapEff:"):
+                    return bool(int(line.split()[1], 16) >> CAP_NET_RAW & 1)
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def open_hci_raw(dev):
+    s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
+    s.bind((dev,))
+    # struct hci_filter: type_mask, event_mask[2], opcode
+    s.setsockopt(socket.SOL_HCI, socket.HCI_FILTER, struct.pack(
+        "<IIIH", 1 << HCI_EVENT_PKT, 0, 1 << (EVT_LE_META - 32), 0))
+    s.settimeout(1.0)
+    return s
+
+
 # ------------------------------------------------------------------ encoding
 # Only used by the simulator and tests: builds payloads in the same layout.
 def encode_a(serial, t_c, rh):
@@ -109,7 +207,13 @@ class HoboReader(threading.Thread):
         self.q = out_q
         self.want_addr = (cfg.get("address") or "").strip().upper()
         self.heartbeat_s = float(cfg.get("heartbeat_s", 60))
+        self.hci_dev = int(cfg.get("hci_dev", 0))
         self.simulate = simulate
+        self._raw_on = False     # raw HCI path active (else bleak callbacks)
+        self._raw_heard = None   # monotonic time of last Onset packet via HCI
+        self._dbus_heard = None  # ... and via bleak
+        self._raw_started = 0.0
+        self._lock = threading.Lock()   # on_advert runs on two threads
         self._halt = threading.Event()
         self._last = {}          # kind -> (payload, monotonic time emitted)
         port = "simulated" if simulate else (
@@ -136,11 +240,12 @@ class HoboReader(threading.Thread):
             return
         if "hobo_serial" in fields:
             self._set(serial=fields.pop("hobo_serial"))
-        prev = self._last.get(kind)
-        if prev and prev[0] == bytes(payload) and \
-                now - prev[1] < self.heartbeat_s:
-            return
-        self._last[kind] = (bytes(payload), now)
+        with self._lock:
+            prev = self._last.get(kind)
+            if prev and prev[0] == bytes(payload) and \
+                    now - prev[1] < self.heartbeat_s:
+                return
+            self._last[kind] = (bytes(payload), now)
         self.q.put(("sample", {
             "source": "hobo",
             "wall": datetime.now().astimezone(),
@@ -164,17 +269,32 @@ class HoboReader(threading.Thread):
             self._note(self.state["detail"])
             return
 
+        if has_cap_net_raw():
+            threading.Thread(target=self._raw_loop, name="hobo-hci",
+                             daemon=True).start()
+        else:
+            self._note("no CAP_NET_RAW: reading via BlueZ only — HOBO "
+                       "temp/RH packets will mostly be missed")
+
         def cb(device, adv):
             data = adv.manufacturer_data.get(ONSET_COMPANY_ID)
-            if data:
+            if not data:
+                return
+            self._dbus_heard = time.monotonic()
+            if not self._raw_on:
                 self.on_advert(device.address, data)
 
         async def scan_forever():
-            async with BleakScanner(detection_callback=cb):
-                self._set(state="connected", detail="scanning")
-                self._note("Bluetooth scan started")
+            # DuplicateData on: report repeats, so the raw reader sees the
+            # logger's broadcasts continuously rather than once.
+            async with BleakScanner(detection_callback=cb, bluez={
+                    "filters": {"DuplicateData": True}}):
+                self._set(state="connected", detail=self._mode())
+                self._note(f"Bluetooth scan started ({self._mode()})")
                 while not self._halt.is_set():
                     await asyncio.sleep(0.5)
+                    self._watchdog()
+                    self._set(detail=self._mode())
 
         while not self._halt.is_set():
             try:
@@ -186,6 +306,47 @@ class HoboReader(threading.Thread):
                 self._set(state="waiting", detail=msg)
                 self._halt.wait(self.RETRY_S)
         self._set(state="stopped")
+
+    def _mode(self):
+        return "raw HCI" if self._raw_on else "BlueZ only — temp/RH may be missed"
+
+    def _watchdog(self):
+        """If BlueZ hears the logger but the raw socket has been silent for
+        30 s, the raw path is not working here: fall back to bleak."""
+        now = time.monotonic()
+        if (self._raw_on and self._dbus_heard and now - self._dbus_heard < 10
+                and (self._raw_heard is None or now - self._raw_heard > 30)
+                and now - self._raw_started > 30):
+            self._raw_on = False
+            self._note("raw HCI socket hears nothing while BlueZ does — "
+                       "falling back to BlueZ (temp/RH may be missed)")
+
+    def _raw_loop(self):
+        while not self._halt.is_set():
+            try:
+                sock = open_hci_raw(self.hci_dev)
+            except OSError as exc:
+                self._raw_on = False
+                self._note(f"raw HCI socket unavailable: {exc}")
+                self._halt.wait(self.RETRY_S)
+                continue
+            self._raw_started = time.monotonic()
+            self._raw_on = True
+            try:
+                while not self._halt.is_set():
+                    try:
+                        pkt = sock.recv(512)
+                    except socket.timeout:
+                        continue
+                    for addr, payload in parse_hci_event(pkt):
+                        self._raw_heard = time.monotonic()
+                        self.on_advert(addr, payload)
+            except OSError as exc:       # adapter reset / removed
+                self._raw_on = False
+                self._note(f"raw HCI read failed: {exc}")
+            finally:
+                sock.close()
+            self._halt.wait(self.RETRY_S)
 
     def _run_sim(self):
         """Synthetic MX2309: a daylight-shaped irradiance curve with cloud

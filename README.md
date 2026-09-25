@@ -234,9 +234,21 @@ workable on 1 GB.
 ## HOBO MX2309 (Bluetooth)
 
 The MX2309 continuously broadcasts its current readings over Bluetooth LE.
-`beacon-logger` listens for those broadcasts through BlueZ, using
-`python3-bleak`. It never connects to the logger, never pairs, and never
-touches the logger's stored data.
+`beacon-logger` only listens to those broadcasts. It never connects to the
+logger, never pairs, and never touches the logger's stored data.
+
+The logger sends two kinds of packet, both tagged with Onset's company ID:
+one carrying temperature/RH and one carrying solar. BlueZ, the Pi's
+Bluetooth service, keeps only one value per company ID for each device,
+so through BlueZ the solar packet overwrites the temperature/RH packet and
+temperature/RH go missing. To avoid that, `beacon-logger` reads the raw
+advertising reports directly from the Bluetooth hardware, as `btmon` does,
+while BlueZ (via `python3-bleak`) keeps the scan running.
+
+Reading raw reports needs the `CAP_NET_RAW` capability, which the systemd
+unit grants. If the capability is missing, or the raw socket hears nothing,
+the logger falls back to BlueZ and says so in the System page's HOBO row
+and in the journal.
 
 **On the logger:** in HOBOconnect, turn on **Bluetooth Always On**. It
 costs battery life: about 2 years instead of 5 at a 1-minute logging
@@ -263,10 +275,11 @@ every `heartbeat_s` (60 s) otherwise, so steady readings (such as zero
 irradiance at night) still leave a regular record. The status chip tracks
 the last time the logger was *heard*, not the last row written.
 
-**Checking live values** (safe to run alongside the logger):
+**Checking live values** (safe to run alongside the logger; `sudo` is
+needed for the raw socket, and without it you'll see mostly solar packets):
 
 ```bash
-python3 -m tools.hobo_scan
+sudo python3 -m tools.hobo_scan
 ```
 
 It prints each changed packet with its decoded fields and raw bytes.

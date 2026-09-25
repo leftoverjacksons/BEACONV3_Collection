@@ -7,6 +7,9 @@ After=local-fs.target bluetooth.target
 Type=simple
 User=@USER@
 SupplementaryGroups=@GROUPS@
+# Raw HCI socket for the HOBO's Bluetooth advertisements (beacon_station/hobo.py):
+# BlueZ merges its two packet kinds and loses the temp/RH one.
+AmbientCapabilities=CAP_NET_RAW
 WorkingDirectory=@REPO@
 ExecStart=/usr/bin/python3 -m beacon_station.logger
 Environment=PYTHONUNBUFFERED=1

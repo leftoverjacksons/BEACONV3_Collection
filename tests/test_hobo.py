@@ -96,6 +96,54 @@ class ReaderTests(unittest.TestCase):
         self.assertIsNone(r.state["last_seen"])
 
 
+def _legacy_event(addr, payload, company=0x00C5):
+    ad = (bytes.fromhex("020106") + bytes.fromhex("020afc")
+          + bytes([len(payload) + 3, 0xFF]) + company.to_bytes(2, "little")
+          + payload)
+    rep = (bytes([0x00, 0x01]) + bytes(reversed(bytes.fromhex(addr.replace(":", ""))))
+           + bytes([len(ad)]) + ad + bytes([0xBC]))
+    body = bytes([0x02, 0x01]) + rep
+    return bytes([0x04, 0x3E, len(body)]) + body
+
+
+class HciParseTests(unittest.TestCase):
+    """Raw HCI LE advertising reports, laid out as in the btmon capture
+    (ADV_IND, random static address, 31 bytes: flags, TX power, Onset
+    manufacturer data)."""
+
+    def test_legacy_report(self):
+        from beacon_station.hobo import parse_hci_event
+        payload = bytes.fromhex(CAPTURED[0][0])
+        pkt = _legacy_event("F8:27:3E:19:81:A5", payload)
+        self.assertEqual(pkt[2] + 3, len(pkt))
+        self.assertEqual(parse_hci_event(pkt), [("F8:27:3E:19:81:A5", payload)])
+
+    def test_both_kinds_survive(self):
+        from beacon_station.hobo import parse_hci_event
+        kinds = set()
+        for h, _ in CAPTURED:
+            for _, p in parse_hci_event(_legacy_event("F8:27:3E:19:81:A5", bytes.fromhex(h))):
+                kinds.add(decode(p)[0])
+        self.assertEqual(kinds, {"A", "B"})
+
+    def test_extended_report(self):
+        from beacon_station.hobo import parse_hci_event
+        payload = bytes.fromhex(CAPTURED[4][0])
+        ad = bytes([len(payload) + 3, 0xFF, 0xC5, 0x00]) + payload
+        rep = (bytes([0x13, 0x00, 0x01]) + bytes.fromhex("a58119 3e27f8".replace(" ", ""))
+               + bytes([1, 0, 0xFF, 0x7F, 0xBC, 0, 0, 0]) + bytes(6)
+               + bytes([len(ad)]) + ad)
+        body = bytes([0x0D, 0x01]) + rep
+        pkt = bytes([0x04, 0x3E, len(body)]) + body
+        self.assertEqual(parse_hci_event(pkt), [("F8:27:3E:19:81:A5", payload)])
+
+    def test_other_company_and_other_events_ignored(self):
+        from beacon_station.hobo import parse_hci_event
+        self.assertEqual(parse_hci_event(_legacy_event("11:22:33:44:55:66", b"xyz", 0x004C)), [])
+        self.assertEqual(parse_hci_event(bytes.fromhex("040e0401030c00")), [])   # cmd complete
+        self.assertEqual(parse_hci_event(b"\x04\x3e\x05\x02\x01\x00"), [])     # truncated
+
+
 class ScanPathTests(unittest.TestCase):
     """run() with a stand-in BleakScanner: the callback wiring, filtering by
     company ID, and the connected state — everything except the radio."""
