@@ -22,6 +22,9 @@ for _ in $(seq 60); do
 done
 
 while true; do
+  # --password-store=basic: with desktop auto-login the GNOME keyring is
+  # never unlocked, and Chromium would otherwise prompt for a keyring
+  # password on every boot.
   # A kill/crash leaves "exited uncleanly" in the profile, which makes
   # Chromium show a restore bubble; clear it.
   sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"[^"]*"/"exit_type":"Normal"/' \
@@ -30,6 +33,7 @@ while true; do
     --user-data-dir="$PROFILE" \
     --kiosk "$URL" \
     --lang=en-US \
+    --password-store=basic \
     --noerrdialogs --disable-infobars --no-first-run \
     --disable-session-crashed-bubble --disable-features=Translate \
     --overscroll-history-navigation=0 --disable-pinch \
