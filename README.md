@@ -165,7 +165,7 @@ sudo tailscale funnel reset         # stop sharing
 ```
 
 Funnel must be enabled for your tailnet first: HTTPS certificates must be
-on, and the tailnet policy must grant the `funnel` attribute (see below).
+on, and the tailnet policy must grant the `funnel` attribute (Tailscale admin console → Access controls).
 Anyone who has the URL can view the dashboard. Nobody can change anything
 through it.
 
