@@ -40,6 +40,14 @@ DEFAULTS = {
         "stale_warn_s": 60,
         "stale_error_s": 300,
     },
+    "moisture": {
+        # Internal-condensation watch (beacon_station/moisture.py).
+        "enabled": True,
+        "caution_margin_C": 3.0,   # margin below this -> caution; below 0 -> risk
+        "rh_int_caution": 90.0,    # internal (PCB) RH at/above this -> caution
+        "persist_samples": 2,      # level must hold this many bursts to change
+        "events": True,            # write event rows on level changes
+    },
     "logging": {
         "data_dir": "~/beacon_data",
         "fsync_interval_s": 30,  # flush() every row, fsync() this often

@@ -142,12 +142,24 @@ main { height: calc(100% - 56px); }
 /* ------------------------------------------------------------ trends */
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .seg { display: inline-flex; gap: 2px; background: var(--surface); border-radius: 10px; padding: 2px; }
-.seg button { min-width: 56px; border: 0; background: transparent; }
+.seg button { min-width: 56px; border: 0; background: transparent; white-space: nowrap; }
+#page-temp .seg button { min-width: 0; padding: 0 11px; }
 .seg button.active { background: var(--accent); }
-.toolbar .info { font-size: 12px; margin-left: auto; }
+.toolbar .info { font-size: 12px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.toolbar { min-width: 0; }
 .charts { height: calc(100% - 52px); display: flex; flex-direction: column; gap: 2px; }
 .charts[hidden], .wind-body[hidden] { display: none; }
 #charts-solar { height: calc(100% - 52px - 58px); }
+#moist-view { height: calc(100% - 52px); }
+#moist-view[hidden] { display: none; }
+#charts-moist { height: calc(100% - 64px); }
+#moist-tiles { gap: 16px; }
+#moist-tiles b { font-size: 22px; }
+#moist-tiles .big b { font-size: 22px; }
+.lvl-good { color: var(--good); } .lvl-warn { color: var(--warn); }
+.lvl-crit { color: var(--crit); } .lvl-off { color: var(--muted); }
+.moist-line { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+.moist-line b { font-weight: 600; }
 .solar-stats { display: flex; gap: 22px; align-items: flex-end; height: 58px; padding: 0 4px; margin-bottom: 6px; }
 .solar-stats .big b { font-size: 34px; }
 .chart { position: relative; min-height: 0; }

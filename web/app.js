@@ -18,11 +18,14 @@ let page = "overview";
 let trWindow = +prefs.get("trWindow", 3600);
 let wrWindow = +prefs.get("wrWindow", 600);
 let windView = prefs.get("windView", "rose");
+let tempView = prefs.get("tempView", "temp");
 let lastRose = null;
 let tick = 0;
 
 const cssv = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const toT = (c) => (c == null ? null : unit === "F" ? c * 9 / 5 + 32 : c);
+// Temperature DIFFERENCES (margins) scale but don't offset.
+const toDT = (c) => (c == null ? null : unit === "F" ? c * 9 / 5 : c);
 const fmt = (v, d = 1) => (v == null || !isFinite(v) ? "–" : v.toFixed(d));
 const pad2 = (n) => String(n).padStart(2, "0");
 const hms = (t) => { const d = new Date(t * 1000); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
@@ -119,6 +122,13 @@ function paintOverview() {
     ? `sample ${hms(a.t)} (${ago(latest.now - a.t)} ago) · n=${st?.counts?.anemo ?? "–"} this run`
     : "no data";
 
+  if (CFG?.moisture?.enabled) {
+    const [m, cls, text] = moistState();
+    $("#ov-moist").innerHTML = m?.level
+      ? `Inside dew pt <b>${fmt(toT(m.td_int_C), 1)}°${unit}</b> · wall margin <b>${fmt(toDT(m.margin_int_C), 1)}°${unit}</b> · <b class="lvl-${cls}">${text}</b>`
+      : `<span class="lvl-off">${text}</span>`;
+  }
+
   const h = latest.latest.hobo;
   $("#ov-solar").textContent = fmt(h?.solar_Wm2, 1);
   $("#ov-accum").textContent = fmt(h?.solar_accum_MJm2, 4);
@@ -128,6 +138,30 @@ function paintOverview() {
   $("#ov-hfoot").textContent = h
     ? `heard ${ago(latest.now - (rd?.last_seen ?? h.t))} ago · n=${st?.counts?.hobo ?? "–"} this run`
     : "no data";
+}
+
+const MOIST_LVL = {
+  ok: ["good", "OK"], caution: ["warn", "CAUTION"], risk: ["crit", "RISK"],
+};
+function moistState() {
+  const m = latest?.status?.moisture;
+  if (!m || !m.level) return [m, "off", "○ no internal RH"];
+  const [cls, label] = MOIST_LVL[m.level];
+  return [m, cls, `${ICON[cls]} ${label}`];
+}
+
+function paintMoist() {
+  const [m, cls, text] = moistState();
+  $$(".unitT").forEach((el) => (el.textContent = `°${unit}`));
+  const st = $("#mo-status");
+  st.className = `lvl-${cls}`;
+  st.textContent = text;
+  st.title = m?.reasons?.join("\n") || "";
+  $("#mo-mint").textContent = fmt(toDT(m?.margin_int_C), 1);
+  $("#mo-tdi").textContent = fmt(toT(m?.td_int_C), 1);
+  $("#mo-tde").textContent = fmt(toT(m?.td_ext_C), 1);
+  $("#mo-mext").textContent = fmt(toDT(m?.margin_ext_C), 1);
+  $("#mo-rhi").textContent = fmt(m?.rh_int_pct, 1);
 }
 
 function paintSolarNow() {
@@ -178,6 +212,28 @@ const GROUPS = {
           // PCB-mounted SHT3x: humidity inside the housing, not ambient.
           { k: "SHT3x_RH_pct", label: "housing (SHT3x)", color: "--s2", w: 1.25, dash: [6, 3] },
           { k: "hobo_RH_pct", src: "hobo", label: "HOBO", color: HOBO, w: 2, dash: [2, 3] },
+        ],
+      },
+    ],
+  },
+  moist: {
+    host: "#charts-moist", info: "#info-temp",
+    specs: [
+      {
+        id: "dew", src: "beacon", h: 0.6, dec: 1, temp: true, labels: true, shadeRisk: true,
+        title: () => `Ambient vs dew points °${unit}`,
+        series: [
+          { k: "t_amb_C", label: "ambient", color: "--s1", w: 2 },
+          { k: "td_int_C", label: "dew pt inside", color: "--s2", w: 2 },
+          { k: "td_ext_C", label: "dew pt outside", color: "--s3", w: 1.5, dash: [6, 3] },
+        ],
+      },
+      {
+        id: "vp", src: "beacon", h: 0.4, dec: 1, xaxis: true,
+        title: () => "Vapor pressure hPa",
+        series: [
+          { k: "e_int_hPa", label: "inside", color: "--s2", w: 2 },
+          { k: "e_ext_hPa", label: "outside", color: "--s3", w: 1.5, dash: [6, 3] },
         ],
       },
     ],
@@ -254,6 +310,34 @@ function eventsPlugin(group, labels) {
   };
 }
 
+/* Shade the time spans where the wall margin is below the caution
+   threshold (amber) or below zero (red), under the series. */
+function riskShadePlugin(group) {
+  return {
+    hooks: {
+      drawAxes: [(u) => {
+        const h = lastHist[group];
+        const m = h?.beacon?.margin_int_C;
+        if (!m || !m.length) return;
+        const caut = CFG?.moisture?.caution_margin_C ?? 3;
+        const ctx = u.ctx;
+        const { top, height } = u.bbox;
+        const xs = h.beacon.t;
+        ctx.save();
+        for (let i = 0; i < xs.length; i++) {
+          const v = m[i];
+          if (v == null || v >= caut) continue;
+          const x0 = u.valToPos(xs[i], "x", true);
+          const x1 = i + 1 < xs.length ? u.valToPos(xs[i + 1], "x", true) : x0 + 2;
+          ctx.fillStyle = v < 0 ? "rgba(208,59,59,0.28)" : "rgba(250,178,25,0.18)";
+          ctx.fillRect(x0, top, Math.max(1, x1 - x0), height);
+        }
+        ctx.restore();
+      }],
+    },
+  };
+}
+
 function buildGroup(g) {
   for (const c of built[g] ?? []) c.u.destroy();
   built[g] = [];
@@ -306,7 +390,7 @@ function buildGroup(g) {
             : { points: { show: false } }),
         };
       })],
-      plugins: [eventsPlugin(g, !!spec.labels)],
+      plugins: [eventsPlugin(g, !!spec.labels), ...(spec.shadeRisk ? [riskShadePlugin(g)] : [])],
       hooks: { setCursor: [(u) => paintLegend(spec, u, legend)] },
     };
     const empty = [[], ...spec.series.map(() => [])];
@@ -396,7 +480,7 @@ function paintGroup(g) {
     paintLegend(spec, u, legend);
   }
   const n = h.n_raw;
-  const info = { temp: `${n.beacon} beacon · ${n.hobo} hobo`, wind: `${n.anemo} anemo`, solar: `${n.hobo} hobo` }[g];
+  const info = { temp: `${n.beacon} beacon · ${n.hobo} hobo`, moist: `${n.beacon} beacon`, wind: `${n.anemo} anemo`, solar: `${n.hobo} hobo` }[g];
   $(GROUPS[g].info).textContent = `${info} samples in window`;
   if (g === "solar") paintSolarStats(h);
 }
@@ -620,7 +704,9 @@ function showPage(p) {
 
 function refreshPage() {
   if (page === "overview") refreshOverviewWind();
-  else if (page === "temp") refreshGroup("temp");
+  else if (page === "temp") {
+    if (tempView === "moist") { paintMoist(); refreshGroup("moist"); } else refreshGroup("temp");
+  }
   else if (page === "wind") { if (windView === "rose") refreshWind(); else refreshGroup("wind"); }
   else if (page === "solar") { paintSolarNow(); refreshGroup("solar"); }
   else if (page === "system") refreshSystem();
@@ -646,6 +732,7 @@ async function poll() {
   paintHealth();
   if (page === "overview") paintOverview();
   if (page === "solar") paintSolarNow();
+  if (page === "temp" && tempView === "moist") paintMoist();
   if (++tick % 5 === 0) refreshPage();
 }
 
@@ -675,9 +762,18 @@ async function init() {
     refreshPage();
   };
   segment("#wind-view", "v", windView, setWindView);
+  const setTempView = (v) => {
+    tempView = v; prefs.set("tempView", v);
+    $("#charts-temp").hidden = v !== "temp";
+    $("#moist-view").hidden = v !== "moist";
+    refreshPage();
+  };
+  segment("#temp-view", "v", tempView, setTempView);
+  $("#charts-temp").hidden = tempView !== "temp";
+  $("#moist-view").hidden = tempView !== "moist";
   $("#wind-rose").hidden = windView !== "rose";
   $("#charts-wind").hidden = windView !== "ts";
-  segment("#unit-toggle", "u", unit, (u) => { unit = u; prefs.set("unit", u); rebuildAll(); paintOverview(); paintSolarNow(); });
+  segment("#unit-toggle", "u", unit, (u) => { unit = u; prefs.set("unit", u); rebuildAll(); paintOverview(); paintSolarNow(); paintMoist(); });
 
   $("#markBtn").onclick = () => ($("#modal").hidden = false);
   $("#modalCancel").onclick = () => ($("#modal").hidden = true);

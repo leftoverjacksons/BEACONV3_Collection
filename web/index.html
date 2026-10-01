@@ -46,6 +46,7 @@
         <div><label>HDC3022</label><b id="ov-hdc">–</b></div>
         <div title="SHT3x humidity on the PCB — inside the housing, not ambient"><label>Housing RH</label><b id="ov-hrh-in">–</b></div>
       </div>
+      <div class="moist-line" id="ov-moist"></div>
       <div class="foot" id="ov-bfoot">no data</div>
     </div>
 
@@ -94,6 +95,10 @@
   <!-- ========================================================= trends -->
   <section id="page-temp" class="page">
     <div class="toolbar">
+      <div class="seg" id="temp-view">
+        <button data-v="temp" class="active">Temp/RH</button>
+        <button data-v="moist">Moisture</button>
+      </div>
       <div class="seg win-seg" id="tr-window">
         <button data-w="600">10 m</button>
         <button data-w="3600" class="active">1 h</button>
@@ -107,6 +112,17 @@
       <span class="muted info" id="info-temp"></span>
     </div>
     <div class="charts" id="charts-temp"></div>
+    <div id="moist-view" hidden>
+      <div class="solar-stats" id="moist-tiles">
+        <div class="kv1 big"><label>Status</label><b id="mo-status">–</b></div>
+        <div class="kv1" title="Wall margin: ambient minus the dew point of the air inside the housing"><label>Wall margin</label><b id="mo-mint">–</b><span class="unitT">°F</span></div>
+        <div class="kv1" title="Dew point of the air inside the housing (SHT3x T + RH)"><label>Dew pt inside</label><b id="mo-tdi">–</b><span class="unitT">°F</span></div>
+        <div class="kv1" title="Dew point of the outside air (HDC3022 T + RH)"><label>Dew pt outside</label><b id="mo-tde">–</b><span class="unitT">°F</span></div>
+        <div class="kv1" title="Coldest device sensor minus the outside dew point"><label>Ext. margin</label><b id="mo-mext">–</b><span class="unitT">°F</span></div>
+        <div class="kv1" title="SHT3x humidity at the PCB"><label>RH inside</label><b id="mo-rhi">–</b><span>%</span></div>
+      </div>
+      <div class="charts" id="charts-moist"></div>
+    </div>
   </section>
 
   <!-- =========================================================== wind -->

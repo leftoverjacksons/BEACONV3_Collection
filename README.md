@@ -140,6 +140,7 @@ wrote it.
 | Page | Shows |
 |---|---|
 | **Overview** | BEACON: compensated temperature, WBGT, RH, pressure, and the three raw temperatures. Anemometer: speed, direction (the compass arrow shows the flow; its tail is the bearing the wind comes *from*), and 10-minute mean and gust. HOBO strip: solar, accumulated solar, air temperature, and RH. |
+| **Temp/RH → Moisture** | Internal-condensation watch ([below](#internal-condensation-watch)): status, wall margin, inside/outside dew points, a chart of ambient temperature against both dew points (spans at risk shaded amber/red), and inside vs outside vapor pressure |
 | **Temp/RH** | BEACON temperatures and RH (plus housing RH from the onboard SHT3x, dashed orange), with the HOBO's temperature and RH overlaid (green, dotted) for comparison. Window of 10 min, 1 h, 6 h, or 24 h; °F/°C toggle. Tap a chart to read values at that time. Event markers appear as dashed lines. |
 | **Wind** | **Rose**: 16 sectors × speed classes, with mean, gust, prevailing direction, and calm fraction. **Time series**: speed (mean, max, deadband) and direction. |
 | **Solar** | HOBO irradiance and accumulated solar over time; current irradiance, peak in the window, and the HOBO's air temperature and RH. Shares its time window with Temp/RH. |
@@ -232,6 +233,47 @@ The largest cost is Chromium. For a single page, expect about
 measured on this Pi. That is comfortable on a 2 GB or larger Pi 4, and
 workable on 1 GB.
 
+## Internal-condensation watch
+
+This watches for the scenario where a device that has equilibrated in
+humid air is moved somewhere cold (indoors, a freezer) and water condenses
+on the inside of the housing.
+
+- **Inside dew point:** SHT3x temperature + `SHT3x_RH`, both from the
+  PCB-mounted sensor. Vapor pressure is uniform through the sealed air, so
+  this dew point applies at the colder housing walls too.
+- **Outside dew point:** HDC3022 temperature + RH, from the same chip.
+- **Wall margin** = ambient − inside dew point. Ambient is the colder of
+  TMP119 and HDC3022; the wall temperature isn't measured, so ambient is
+  the conservative stand-in.
+  - ≥ 3 °C: **OK**.
+  - 0–3 °C: **CAUTION**.
+  - < 0: **RISK**, the walls are likely condensing.
+- **External margin** = coldest device sensor − outside dew point. This
+  covers the cold device brought into warm, humid air: condensation on the
+  outside and on the sensors. Because the outside dew point comes from the
+  outside sensor, once that sensor is wet it pins near 100 % RH and the
+  margin settles near 0 (CAUTION).
+- **Inside RH ≥ 90 %** also raises CAUTION.
+- **Events:** each level change, after holding for 2 bursts (~20 s), writes
+  an `event` row, e.g. `moisture RISK (was ok): ambient -10.0 C below
+  internal dew point 24.1 C ...`. Risk periods can be found in the CSV
+  without anyone watching.
+- **Nothing derived is stored as a CSV column:** dew points, vapor pressures
+  and margins are recomputed from the raw readings, so changing formulas or
+  thresholds also re-evaluates history.
+
+Thresholds are in `config.toml` under `[moisture]`. The formula is Magnus
+over water (Alduchov & Eskridge), accurate to about 0.1 °C. Sensor accuracy
+dominates: about ±2 % RH gives about ±0.6 °C of dew point, so treat
+inside/outside dew-point differences under ~1.5 °C as noise. Near
+saturation, RH sensors lose accuracy and can read high for a while after
+being wetted.
+
+To compare inside and outside air for the membrane-lag study, use the
+vapor-pressure chart, not RH. Inside RH is lower simply because the PCB is
+warmer.
+
 ## HOBO MX2309 (Bluetooth)
 
 The MX2309 continuously broadcasts its current readings over Bluetooth LE.
@@ -293,7 +335,7 @@ to the logger's MAC address. `hobo_scan` and the System page both show it.
 ```
 beacon_station/   logger.py (service), web.py (service), parsers.py, csvlog.py,
                   serial_io.py (readers + simulators), hobo.py (BLE listener),
-                  sysinfo.py, config.py
+                  moisture.py (dew points, condensation risk), sysinfo.py, config.py
 web/              dashboard: index.html, app.js, style.css, vendor/uPlot
 deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, systemd units
 tools/            list_ports.py, hobo_scan.py

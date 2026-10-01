@@ -31,6 +31,15 @@ heartbeat_s = 60         # log at least this often even when values are unchange
 stale_warn_s = 60
 stale_error_s = 300
 
+[moisture]
+# Internal-condensation watch: compares ambient temperature with the dew
+# point of the air inside the housing (SHT3x T + SHT3x_RH). See README.
+enabled = true
+caution_margin_C = 3.0   # margin (deg C) below this -> caution; below 0 -> risk
+rh_int_caution = 90.0    # internal RH at/above this -> caution
+persist_samples = 2      # a level must hold this many bursts (~10 s each) to change
+events = true            # write "moisture ..." event rows on level changes
+
 [logging]
 data_dir = "~/beacon_data"
 fsync_interval_s = 30    # rows are flushed immediately; fsync'd this often

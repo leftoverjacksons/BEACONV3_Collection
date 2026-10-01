@@ -27,6 +27,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import config as config_mod
+from . import moisture
 from . import sysinfo
 from .csvlog import FILE_PREFIX
 
@@ -273,6 +274,24 @@ def _hold_fields(ts, rows, max_age):
     return out
 
 
+MOIST_KEYS = ("td_int_C", "td_ext_C", "t_amb_C", "e_int_hPa", "e_ext_hPa",
+              "margin_int_C", "margin_ext_C")
+
+
+def _moisture_series(b):
+    """Dew points, vapour pressures and margins for each (possibly binned)
+    beacon point. Computed from the binned T/RH means — the non-linearity
+    over one bin is far below sensor accuracy."""
+    out = {k: [] for k in MOIST_KEYS}
+    n = len(b[0]) if b else 0
+    for j in range(n):
+        s = {k: b[i][j] for i, k in enumerate(BEACON_KEYS)}
+        m = moisture.assess(s)
+        for k in MOIST_KEYS:
+            out[k].append(m[k])
+    return out
+
+
 def _anemo_reducer(rows):
     spd = [r[0] for r in rows if r[0] is not None]
     dirs = [r[1] for r in rows if r[1] is not None and r[0]]
@@ -309,11 +328,13 @@ def history(store, window_s, points):
         return [[None if r is None else r[i] for r in rows] for i in range(n)]
 
     b = cols(br2, len(BEACON_KEYS))
+    b_derived = _moisture_series(b)
     a = cols(ar2, 4)
     h = cols(hr2, len(HOBO_KEYS))
     return {
         "t0": t0, "t1": t1,
-        "beacon": {"t": bt2, **{k: b[i] for i, k in enumerate(BEACON_KEYS)}},
+        "beacon": {"t": bt2, **{k: b[i] for i, k in enumerate(BEACON_KEYS)},
+                   **b_derived},
         "anemo": {"t": at2, "mean": a[0], "gust": a[1], "dir": a[2],
                   "zero": a[3]},
         "hobo": {"t": ht2, **{k: h[i] for i, k in enumerate(HOBO_KEYS)}},
@@ -391,6 +412,8 @@ def make_handler(cfg, store, syscache, readonly=False):
         "event_labels": cfg["display"]["event_labels"],
         "history_hours": cfg["display"]["history_hours"],
         "readonly": readonly,
+        "moisture": {k: cfg["moisture"][k]
+                     for k in ("enabled", "caution_margin_C", "rh_int_caution")},
     }
     max_window = cfg["display"]["history_hours"] * 3600
 

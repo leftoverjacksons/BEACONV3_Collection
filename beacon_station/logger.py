@@ -25,6 +25,7 @@ from datetime import datetime
 from . import config as config_mod
 from .csvlog import RotatingCsv
 from .parsers import AnemoParser, BeaconParser
+from . import moisture
 from .hobo import HoboReader
 from .serial_io import InstrumentReader, SerialSource, SimAnemo, SimBeacon
 
@@ -122,6 +123,9 @@ def main(argv=None):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: halt.set())
 
+    mcfg = cfg["moisture"]
+    mtrack = moisture.LevelTracker(mcfg["persist_samples"])
+    mstate = None          # latest assessment, published with the status
     counts = {"beacon": 0, "anemo": 0, "hobo": 0, "event": 0}
     last_t = {k: None for k in counts}
     started = time.time()
@@ -153,6 +157,19 @@ def main(argv=None):
                 publish({"type": "sample", **sample_to_wire(s)})
                 if s["source"] == "event":
                     log(f"event: {s['note']}")
+                if s["source"] == "beacon" and mcfg["enabled"]:
+                    mstate = moisture.assess(s, mcfg["caution_margin_C"],
+                                             mcfg["rh_int_caution"])
+                    change = mtrack.update(mstate["level"])
+                    # Event rows on every level change, except the first
+                    # "ok" after start-up (nothing happened).
+                    if change and mcfg["events"] and change != (None, "ok"):
+                        old, new = change
+                        why = "; ".join(mstate["reasons"]) or "margins clear"
+                        q.put(("sample", {
+                            "source": "event", "wall": s["wall"],
+                            "note": f"moisture {new.upper()} (was {old or '-'}): {why}",
+                        }))
             elif item is not None and item[0] == "note":
                 _, inst, text = item
                 log(f"{inst}: {text}")
@@ -171,6 +188,8 @@ def main(argv=None):
                     "counts": counts,
                     "last_t": last_t,
                     "readers": {n: r.state for n, r in readers.items()},
+                    "moisture": None if mstate is None else {
+                        **mstate, "level": mtrack.level or mstate["level"]},
                 })
     finally:
         log("stopping")
