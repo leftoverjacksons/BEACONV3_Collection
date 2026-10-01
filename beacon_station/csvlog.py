@@ -16,6 +16,10 @@ Schema: the first 11 columns are identical to the original laptop logger
     hobo_addr     Bluetooth address of the logger heard
     hobo_raw      the advertisement payload, hex — decoding is inferred, so
                   the raw bytes are kept for re-decoding
+  schema 4:
+    SHT3x_RH_pct  BEACON humidity at the PCB-mounted SHT3x — INSIDE the
+                  housing, not ambient (ambient is RH_pct). Blank for
+                  firmware that doesn't report it.
 
 iso_time stays naive local time, as before. Temperatures stay native deg C.
 
@@ -35,7 +39,7 @@ from pathlib import Path
 
 from . import sysinfo
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 CSV_COLUMNS = [
     "iso_time", "source",
     "TMP119_C", "SHT3x_C", "HDC3022_C", "RH_pct", "P_hPa",
@@ -44,6 +48,7 @@ CSV_COLUMNS = [
     "utc_time", "dev_uptime_s", "note",
     "hobo_T_C", "hobo_RH_pct", "solar_Wm2", "solar_accum_MJm2", "hobo_ch0d",
     "hobo_addr", "hobo_raw",
+    "SHT3x_RH_pct",
 ]
 FILE_PREFIX = "beacon_env_log_"
 
@@ -63,7 +68,7 @@ def format_row(s):
     row["source"] = s["source"]
     if s["source"] == "beacon":
         for k in ("TMP119_C", "SHT3x_C", "HDC3022_C", "RH_pct", "P_hPa",
-                  "WBGT_C"):
+                  "WBGT_C", "SHT3x_RH_pct"):
             row[k] = _f(s.get(k))
         row["comp_temp_C"] = _f(s.get("comp_temp_C"), ".3f")
         row["dev_uptime_s"] = _f(s.get("dev_uptime_s"), ".3f")

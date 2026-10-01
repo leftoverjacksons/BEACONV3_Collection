@@ -2,15 +2,24 @@
 Line parsers for the two instruments. Pure functions/classes, no I/O, so
 they can be tested against captured logs (tests/fixtures/).
 
-BEACON V3 — Zephyr console stream. Three lines of one env_hs_sampler burst
-are used; everything else (noise_proc, soc_estimator, EMA/RoC/Deltas, modem,
-dbg) is ignored:
+BEACON V3 — Zephyr console stream. Three lines of one sampler burst are
+used; everything else (noise_proc, soc_estimator, EMA/RoC/Deltas, modem,
+dbg) is ignored. Current firmware (module therm_meas_sampler):
 
-    [66:28:00.919,000] <inf> env_hs_sampler: Raw: TMP119=23.45 SHT3x=27.19
-                        HDC3022=24.66 RH=50.41 P=997.19 hPa
-    [66:28:00.919,000] <inf> env_hs_sampler: Compensated temp: 24.113 degC ...
-    [66:28:00.920,000] <inf> env_hs_sampler: HS Sample: T=75.40 deg F,
-                        24.11 deg C H=50.41 WBGT=19.53
+    [00:00:12.514,000] <inf> therm_meas_sampler: Raw: TMP119=23.75
+        SHT3x=26.92 HDC3022=24.81 RH=48.76 SHT3x_RH=47.04 P=978.59 hPa
+    [00:00:12.514,000] <inf> therm_meas_sampler: Compensated temp: 24.203 degC ...
+    [00:00:12.515,000] <inf> therm_meas_sampler: HS Sample: T=75.57 deg F,
+                        24.20 deg C H=48.76 WBGT=19.41
+
+Earlier firmware called the module env_hs_sampler and had no SHT3x_RH. The
+lines are matched by content, not module name, and the Raw line is read as
+name=value pairs, so a renamed module or an added field doesn't break
+parsing; fields missing from a given firmware are logged blank.
+
+  RH        humidity in the ventilated sensing region (HDC3022) — ambient
+  SHT3x_RH  humidity at the PCB-mounted SHT3x, i.e. INSIDE THE HOUSING;
+            not ambient. Logged as SHT3x_RH_pct.
 
 A burst opens at 'Raw:' and is emitted when 'HS Sample:' arrives. If a burst
 is truncated it is flushed as-is when the next 'Raw:' begins, with missing
@@ -36,16 +45,23 @@ ANSI_RE = re.compile(r"\x1b?\[[0-9;]*m")
 UPTIME_RE = re.compile(r"\[(\d+):(\d{2}):(\d{2})\.(\d{3}),(\d{3})\]")
 
 _NUM = r"(-?\d+\.?\d*)"
-RAW_RE = re.compile(
-    r"env_hs_sampler:\s*Raw:\s*"
-    rf"TMP119={_NUM}\s+SHT3x={_NUM}\s+HDC3022={_NUM}\s+"
-    rf"RH={_NUM}\s+P={_NUM}"
-)
-COMP_RE = re.compile(rf"env_hs_sampler:\s*Compensated temp:\s*{_NUM}\s*degC")
-WBGT_RE = re.compile(rf"env_hs_sampler:\s*HS Sample:.*WBGT={_NUM}")
+# Any module name ("[\w.]+:") — the content after it is what identifies the line.
+RAW_RE = re.compile(r"[\w.]+:\s*Raw:\s*(?=TMP119=)")
+KV_RE = re.compile(rf"(\w+)={_NUM}")
+COMP_RE = re.compile(rf"[\w.]+:\s*Compensated temp:\s*{_NUM}\s*degC")
+WBGT_RE = re.compile(rf"[\w.]+:\s*HS Sample:.*WBGT={_NUM}")
 
+# Raw-line key -> logged field
+RAW_KEYS = {
+    "TMP119": "TMP119_C",
+    "SHT3x": "SHT3x_C",
+    "HDC3022": "HDC3022_C",
+    "RH": "RH_pct",
+    "SHT3x_RH": "SHT3x_RH_pct",     # inside the housing, not ambient
+    "P": "P_hPa",
+}
 BEACON_FIELDS = ("TMP119_C", "SHT3x_C", "HDC3022_C", "RH_pct", "P_hPa",
-                 "comp_temp_C", "WBGT_C")
+                 "comp_temp_C", "WBGT_C", "SHT3x_RH_pct")
 
 
 def clean_line(raw):
@@ -87,17 +103,16 @@ class BeaconParser:
         if m:
             if self.pending is not None:     # previous burst truncated
                 out.append(self.pending)
+            # Read only up to the next log line, in case the console
+            # interleaved one onto the end of this one.
+            rest = re.split(r"[\[<]", line[m.end():], maxsplit=1)[0]
+            vals = {k: float(v) for k, v in KV_RE.findall(rest)}
             self.pending = {
                 "source": "beacon",
                 "wall": wall,
                 "dev_uptime_s": _uptime_before(line, m.start()),
-                "TMP119_C": float(m.group(1)),
-                "SHT3x_C": float(m.group(2)),
-                "HDC3022_C": float(m.group(3)),
-                "RH_pct": float(m.group(4)),
-                "P_hPa": float(m.group(5)),
-                "comp_temp_C": None,
-                "WBGT_C": None,
+                **{f: None for f in BEACON_FIELDS},
+                **{f: vals.get(k) for k, f in RAW_KEYS.items()},
             }
             return out
 

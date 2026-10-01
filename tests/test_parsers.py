@@ -11,6 +11,7 @@ from beacon_station.csvlog import CSV_COLUMNS, RotatingCsv, format_row
 from beacon_station.parsers import AnemoParser, BeaconParser, clean_line
 
 FIXTURE = Path(__file__).parent / "fixtures" / "beacon_capture.txt"
+FIXTURE_V2 = Path(__file__).parent / "fixtures" / "beacon_capture_v2.txt"
 WALL = datetime(2026, 9, 25, 12, 0, 0, 123456).astimezone()
 
 
@@ -41,6 +42,40 @@ class BeaconTests(unittest.TestCase):
         self.assertAlmostEqual(a["dev_uptime_s"], 66 * 3600 + 28 * 60 + 0.919)
         self.assertEqual(b["RH_pct"], 51.97)
         self.assertEqual(b["WBGT_C"], 19.70)
+
+    def test_old_firmware_has_no_housing_rh(self):
+        out, _ = run_beacon(FIXTURE.read_text(encoding="utf-8").splitlines())
+        self.assertIsNone(out[0]["SHT3x_RH_pct"])
+
+    def test_new_firmware_therm_meas_sampler(self):
+        out, p = run_beacon(FIXTURE_V2.read_text(encoding="utf-8").splitlines())
+        self.assertEqual(len(out), 1)
+        self.assertIsNone(p.pending)
+        s = out[0]
+        self.assertEqual(s["TMP119_C"], 23.75)
+        self.assertEqual(s["SHT3x_C"], 26.92)
+        self.assertEqual(s["HDC3022_C"], 24.81)
+        self.assertEqual(s["RH_pct"], 48.76)
+        self.assertEqual(s["SHT3x_RH_pct"], 47.04)
+        self.assertEqual(s["P_hPa"], 978.59)
+        self.assertEqual(s["comp_temp_C"], 24.203)
+        self.assertEqual(s["WBGT_C"], 19.41)
+        self.assertAlmostEqual(s["dev_uptime_s"], 12.514)
+
+    def test_raw_fields_in_any_order_and_unknown_ignored(self):
+        _, p = run_beacon(["<inf> some_new_module: Raw: TMP119=1.5 NEW=9 "
+                           "P=900.0 RH=40.0 hPa"])
+        self.assertEqual(p.pending["TMP119_C"], 1.5)
+        self.assertEqual(p.pending["P_hPa"], 900.0)
+        self.assertEqual(p.pending["RH_pct"], 40.0)
+        self.assertIsNone(p.pending["SHT3x_C"])
+        self.assertNotIn("NEW", p.pending)
+
+    def test_interleaved_line_after_raw_not_parsed(self):
+        _, p = run_beacon(["[0:00:01.000,000] <inf> therm_meas_sampler: Raw: "
+                           "TMP119=1 SHT3x=2 HDC3022=3 RH=4 P=5 hPa"
+                           "[0:00:01.001,000] <inf> soc_estimator: VBAT=3951 RH=99"])
+        self.assertEqual(p.pending["RH_pct"], 4.0)
 
     def test_real_escape_bytes(self):
         raw = (b"[66:28:00.919,000] \x1b[0m<inf> env_hs_sampler: Raw: "
@@ -92,6 +127,12 @@ class AnemoTests(unittest.TestCase):
 
 
 class CsvTests(unittest.TestCase):
+    def test_housing_rh_column(self):
+        out, _ = run_beacon(FIXTURE_V2.read_text(encoding="utf-8").splitlines())
+        row = dict(zip(CSV_COLUMNS, format_row(out[0])))
+        self.assertEqual(row["SHT3x_RH_pct"], "47.04")
+        self.assertEqual(CSV_COLUMNS[-1], "SHT3x_RH_pct")
+
     def test_legacy_columns_unchanged(self):
         self.assertEqual(CSV_COLUMNS[:11], [
             "iso_time", "source", "TMP119_C", "SHT3x_C", "HDC3022_C",

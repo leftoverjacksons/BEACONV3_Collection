@@ -4,8 +4,8 @@ Unattended field logger for comparing the **BEACON V3** environmental sensor
 against reference instruments. It runs on a Raspberry Pi 4 with the 7"
 touchscreen and logs:
 
-- **BEACON V3**: the Zephyr console stream over USB serial (`env_hs_sampler`
-  bursts, about every 10 s).
+- **BEACON V3**: the Zephyr console stream over USB serial: sampler bursts
+  (`therm_meas_sampler`, formerly `env_hs_sampler`), about every 10 s.
 - **XinFeng XF502/AB ultrasonic anemometer**: through the Teensy RS-485 bridge,
   as CSV.
 - **HOBO MX2309** (temperature, RH, and solar via an LI-COR LI-200R
@@ -140,7 +140,7 @@ wrote it.
 | Page | Shows |
 |---|---|
 | **Overview** | BEACON: compensated temperature, WBGT, RH, pressure, and the three raw temperatures. Anemometer: speed, direction (the compass arrow shows the flow; its tail is the bearing the wind comes *from*), and 10-minute mean and gust. HOBO strip: solar, accumulated solar, air temperature, and RH. |
-| **Temp/RH** | BEACON temperatures and RH, with the HOBO's temperature and RH overlaid (green, dotted) for comparison. Window of 10 min, 1 h, 6 h, or 24 h; °F/°C toggle. Tap a chart to read values at that time. Event markers appear as dashed lines. |
+| **Temp/RH** | BEACON temperatures and RH (plus housing RH from the onboard SHT3x, dashed orange), with the HOBO's temperature and RH overlaid (green, dotted) for comparison. Window of 10 min, 1 h, 6 h, or 24 h; °F/°C toggle. Tap a chart to read values at that time. Event markers appear as dashed lines. |
 | **Wind** | **Rose**: 16 sectors × speed classes, with mean, gust, prevailing direction, and calm fraction. **Time series**: speed (mean, max, deadband) and direction. |
 | **Solar** | HOBO irradiance and accumulated solar over time; current irradiance, peak in the window, and the HOBO's air temperature and RH. Shares its time window with Temp/RH. |
 | **System** | Clock sync, logger state, per-port status, current file, CPU temperature, under-voltage/throttle flags, disk free, and recent messages. |
@@ -197,6 +197,7 @@ downstream with `merge_asof` or resampling.
 | `note` | *new:* event-marker label |
 | `hobo_T_C` `hobo_RH_pct` `solar_Wm2` `solar_accum_MJm2` `hobo_ch0d` | *schema 3:* `hobo` rows, decoded from the logger's broadcasts ([see below](#hobo-mx2309-bluetooth)) |
 | `hobo_addr` `hobo_raw` | *schema 3:* the Bluetooth address of the logger heard, and the raw broadcast bytes as hex |
+| `SHT3x_RH_pct` | *schema 4:* BEACON humidity at the PCB-mounted SHT3x, **inside the housing, not ambient** (ambient is `RH_pct`). Blank for firmware that doesn't report it |
 
 The first 11 columns are identical to the laptop tool's output, so existing
 readers (for example `beacon_replay_qt.py`) continue to work. New columns

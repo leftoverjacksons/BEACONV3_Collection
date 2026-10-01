@@ -1,0 +1,6 @@
+[00:00:12.514,000] <inf> therm_meas_sampler: Raw: TMP119=23.75 SHT3x=26.92 HDC3022=24.81 RH=48.76 SHT3x_RH=47.04 P=978.59 hPa
+[00:00:12.514,000] <inf> therm_meas_sampler: EMA: TMP119=23.741 SHT3x=26.894 HDC3022=24.813
+[00:00:12.514,000] <inf> therm_meas_sampler: RoC: T1m=0.000 T5m=0.000 T10m=0.000 S5m=0.000 S10m=0.000
+[00:00:12.514,000] <inf> therm_meas_sampler: Deltas: Solar=3.153 Board=1.072 BQ25190=25241 mdegC
+[00:00:12.514,000] <inf> therm_meas_sampler: Compensated temp: 24.203 degC (75.566 degF)
+[00:00:12.515,000] <inf> therm_meas_sampler: HS Sample: T=75.57 deg F, 24.20 deg C H=48.76 WBGT=19.41

@@ -100,6 +100,7 @@ function paintOverview() {
   $("#ov-tmp").textContent = b ? `${fmt(toT(b.TMP119_C), 2)}°` : "–";
   $("#ov-sht").textContent = b ? `${fmt(toT(b.SHT3x_C), 2)}°` : "–";
   $("#ov-hdc").textContent = b ? `${fmt(toT(b.HDC3022_C), 2)}°` : "–";
+  $("#ov-hrh-in").textContent = b?.SHT3x_RH_pct != null ? `${fmt(b.SHT3x_RH_pct, 1)}%` : "–";
   $("#ov-bfoot").textContent = b
     ? `sample ${hms(b.t)} (${ago(latest.now - b.t)} ago) · n=${st?.counts?.beacon ?? "–"} this run`
     : "no data";
@@ -174,6 +175,8 @@ const GROUPS = {
         title: () => "RH %",
         series: [
           { k: "RH_pct", label: "BEACON", color: "--s1", w: 1.5 },
+          // PCB-mounted SHT3x: humidity inside the housing, not ambient.
+          { k: "SHT3x_RH_pct", label: "housing (SHT3x)", color: "--s2", w: 1.25, dash: [6, 3] },
           { k: "hobo_RH_pct", src: "hobo", label: "HOBO", color: HOBO, w: 2, dash: [2, 3] },
         ],
       },

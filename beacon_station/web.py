@@ -36,7 +36,7 @@ KIOSK_STOP_FLAG = "/tmp/beacon-kiosk.stop"
 LOOPBACK = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
 BEACON_KEYS = ("TMP119_C", "SHT3x_C", "HDC3022_C", "comp_temp_C", "WBGT_C",
-               "RH_pct", "P_hPa")
+               "RH_pct", "P_hPa", "SHT3x_RH_pct")
 # A gap longer than this (s) between plotted points is drawn as a break.
 HOBO_KEYS = ("hobo_T_C", "hobo_RH_pct", "solar_Wm2", "solar_accum_MJm2",
              "hobo_ch0d")

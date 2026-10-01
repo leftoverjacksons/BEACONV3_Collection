@@ -74,12 +74,17 @@ class _SimSource:
 class SimBeacon(_SimSource):
     """Replays the recorded capture, perturbing values, one burst per 10 s."""
 
-    FIXTURE = (Path(__file__).resolve().parent.parent
-               / "tests" / "fixtures" / "beacon_capture.txt")
+    # The current-firmware capture, padded with the older capture's filler
+    # lines (noise_proc, modem...) so the stream looks realistic.
+    FIXTURES = [Path(__file__).resolve().parent.parent / "tests" / "fixtures"
+                / name for name in ("beacon_capture_v2.txt",
+                                    "beacon_capture.txt")]
 
     def open(self):
         super().open()
-        self.lines = self.FIXTURE.read_text(encoding="utf-8").splitlines()
+        new, old = (f.read_text(encoding="utf-8").splitlines()
+                    for f in self.FIXTURES)
+        self.lines = new + [l for l in old if "_sampler" not in l]
         self.i = 0
         self.t0 = time.monotonic()
 
@@ -89,7 +94,7 @@ class SimBeacon(_SimSource):
         # Drift the numbers slowly so plots show something.
         phase = (time.monotonic() - self.t0) / 600.0
         off = 2.0 * math.sin(phase) + random.gauss(0, 0.05)
-        if "env_hs_sampler" in line:
+        if "_sampler" in line:
             line = re.sub(
                 r"(TMP119|SHT3x|HDC3022|WBGT)=(-?\d+\.\d+)",
                 lambda m: f"{m.group(1)}={float(m.group(2)) + off:.2f}", line)
@@ -97,9 +102,8 @@ class SimBeacon(_SimSource):
                 r"Compensated temp: (-?\d+\.\d+)",
                 lambda m: f"Compensated temp: {float(m.group(1)) + off:.3f}",
                 line)
-        # The fixture holds two bursts; spread its lines over 20 s so the
-        # simulated burst period matches the real ~10 s.
-        return line, 20.0 / len(self.lines)
+        # One burst per pass; spread the lines so bursts come every ~10 s.
+        return line, 10.0 / len(self.lines)
 
 
 class SimAnemo(_SimSource):
