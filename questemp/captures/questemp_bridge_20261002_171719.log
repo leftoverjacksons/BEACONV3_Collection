@@ -1,0 +1,5 @@
+2026-10-02T17:17:19.558  --  bridge device=COM9 <-> host=COM20 @ 9600 8N1
+2026-10-02T17:17:19.558  --  start DMS on the other end of the virtual pair. Ctrl-C to stop.
+2026-10-02T17:17:19.570  --  lines host DTR=False RTS=False | device DSR=True CTS=True CD=False
+2026-10-02T17:17:19.600  --  lines host DTR=False RTS=False | device DSR=False CTS=False CD=False
+2026-10-02T17:17:49.552  --  stopped
