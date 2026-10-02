@@ -137,6 +137,15 @@ class HciParseTests(unittest.TestCase):
         pkt = bytes([0x04, 0x3E, len(body)]) + body
         self.assertEqual(parse_hci_event(pkt), [("F8:27:3E:19:81:A5", payload)])
 
+    def test_filter_is_full_kernel_struct(self):
+        # Linux >= 6.9 rejects a short struct hci_ufilter with EINVAL (seen
+        # in the field: "[Errno 22] Invalid argument"); it is 16 bytes.
+        import struct
+        from beacon_station.hobo import hci_filter
+        f = hci_filter()
+        self.assertEqual(len(f), 16)
+        self.assertEqual(struct.unpack("<IIIH", f[:14]), (1 << 4, 0, 1 << 30, 0))
+
     def test_other_company_and_other_events_ignored(self):
         from beacon_station.hobo import parse_hci_event
         self.assertEqual(parse_hci_event(_legacy_event("11:22:33:44:55:66", b"xyz", 0x004C)), [])

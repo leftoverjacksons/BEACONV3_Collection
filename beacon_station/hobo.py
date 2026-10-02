@@ -166,12 +166,29 @@ def has_cap_net_raw():
     return False
 
 
+def hci_filter():
+    """struct hci_ufilter { u32 type_mask; u32 event_mask[2]; u16 opcode; }
+    is 16 bytes with its trailing alignment padding. Since Linux 6.9 the
+    kernel rejects anything shorter with EINVAL, so the padding matters."""
+    return struct.pack("<IIIH2x", 1 << HCI_EVENT_PKT, 0,
+                       1 << (EVT_LE_META - 32), 0)
+
+
 def open_hci_raw(dev):
+    """Raw HCI socket receiving LE meta events. Errors name the failing
+    step, since they otherwise all look alike (EINVAL, EPERM...)."""
     s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
-    s.bind((dev,))
-    # struct hci_filter: type_mask, event_mask[2], opcode
-    s.setsockopt(socket.SOL_HCI, socket.HCI_FILTER, struct.pack(
-        "<IIIH", 1 << HCI_EVENT_PKT, 0, 1 << (EVT_LE_META - 32), 0))
+    try:
+        for step, call in (("bind", lambda: s.bind((dev,))),
+                           ("set filter", lambda: s.setsockopt(
+                               socket.SOL_HCI, socket.HCI_FILTER, hci_filter()))):
+            try:
+                call()
+            except OSError as exc:
+                raise OSError(exc.errno, f"{step} on hci{dev}: {exc.strerror}") from exc
+    except OSError:
+        s.close()
+        raise
     s.settimeout(1.0)
     return s
 
@@ -327,9 +344,15 @@ class HoboReader(threading.Thread):
                 sock = open_hci_raw(self.hci_dev)
             except OSError as exc:
                 self._raw_on = False
-                self._note(f"raw HCI socket unavailable: {exc}")
+                msg = f"raw HCI socket unavailable: {exc}"
+                if msg != getattr(self, "_raw_err", None):   # log once, not every retry
+                    self._note(msg)
+                    self._raw_err = msg
                 self._halt.wait(self.RETRY_S)
                 continue
+            if getattr(self, "_raw_err", None):
+                self._note("raw HCI socket open — temp/RH packets now received")
+                self._raw_err = None
             self._raw_started = time.monotonic()
             self._raw_on = True
             try:
