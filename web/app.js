@@ -281,7 +281,10 @@ function eventsPlugin(group, labels) {
   return {
     hooks: {
       draw: [(u) => {
-        const ev = lastHist[group]?.events ?? [];
+        // Automatic "moisture ..." events belong to the Moisture charts
+        // (and are drawn there without labels; the shading says it).
+        const ev = (lastHist[group]?.events ?? []).filter(
+          (e) => group === "moist" || !e.note.startsWith("moisture "));
         if (!ev.length) return;
         const ctx = u.ctx;
         const { top, height } = u.bbox;
@@ -296,7 +299,7 @@ function eventsPlugin(group, labels) {
           const x = Math.round(u.valToPos(e.t, "x", true));
           if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) continue;
           ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + height); ctx.stroke();
-          if (!labels) continue;
+          if (!labels || e.note.startsWith("moisture ")) continue;
           // Stagger labels of nearby markers; right-align near the edge.
           row = x - lastX < 90 * devicePixelRatio ? (row + 1) % 3 : 0;
           lastX = x;

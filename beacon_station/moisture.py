@@ -63,7 +63,8 @@ def _min(*vals):
     return min(vals) if vals else None
 
 
-def assess(s, caution_margin_c=3.0, rh_int_caution=90.0):
+def assess(s, caution_margin_c=3.0, rh_int_caution=90.0, prev_level=None,
+           hyst_c=0.5, hyst_rh=2.0):
     """Beacon sample (dict with the logged field names) -> derived values,
     level and human-readable reasons. Missing inputs give None values and
     never raise; a sample with no SHT3x_RH (old firmware) assesses nothing
@@ -84,19 +85,27 @@ def assess(s, caution_margin_c=3.0, rh_int_caution=90.0):
             level = lv
         reasons.append(why)
 
+    # Hysteresis: once at a level, leaving it needs the margin to clear the
+    # threshold by hyst_c (RH by hyst_rh), so a margin hovering on a
+    # threshold does not flip the level (and log events) every few bursts.
+    held = LEVELS.index(prev_level) if prev_level in LEVELS else 0
+    risk_at = hyst_c if held >= 2 else 0.0
+    caut_at = caution_margin_c + (hyst_c if held >= 1 else 0.0)
+    rh_at = rh_int_caution - (hyst_rh if held >= 1 else 0.0)
+
     if m_int is not None:
-        if m_int < 0:
+        if m_int < risk_at:
             bump("risk", f"ambient {t_amb:.1f} C below internal dew point "
                          f"{td_int:.1f} C (walls likely condensing)")
-        elif m_int < caution_margin_c:
+        elif m_int < caut_at:
             bump("caution", f"wall margin {m_int:.1f} C")
     if m_ext is not None:
-        if m_ext < 0:
+        if m_ext < risk_at:
             bump("risk", f"device {t_cold:.1f} C below external dew point "
                          f"{td_ext:.1f} C (condensing outside)")
-        elif m_ext < caution_margin_c:
+        elif m_ext < caut_at:
             bump("caution", f"external margin {m_ext:.1f} C")
-    if rh_int is not None and rh_int >= rh_int_caution:
+    if rh_int is not None and rh_int >= rh_at:
         bump("caution", f"internal RH {rh_int:.0f} %")
 
     return {

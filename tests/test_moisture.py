@@ -69,6 +69,25 @@ class AssessTests(unittest.TestCase):
         self.assertEqual(m["level"], "ok")          # external margin still assessed
 
 
+class HysteresisTests(unittest.TestCase):
+    def test_margin_hovering_on_threshold_does_not_flip(self):
+        td = dew_point(25.0, 70.0)
+        near = lambda m: beacon(td + m, td + m + 0.5, 50.0, 25.0, 70.0)
+        self.assertEqual(assess(near(2.9))["level"], "caution")
+        # Back above 3.0 but within the 0.5 band: stays caution...
+        self.assertEqual(assess(near(3.2), prev_level="caution")["level"], "caution")
+        # ...from ok it would be ok; and clearing the band releases it.
+        self.assertEqual(assess(near(3.2), prev_level="ok")["level"], "ok")
+        self.assertEqual(assess(near(3.6), prev_level="caution")["level"], "ok")
+
+    def test_risk_needs_clear_positive_margin_to_release(self):
+        td = dew_point(25.0, 70.0)
+        m = assess(beacon(td + 0.2, td + 0.7, 50.0, 25.0, 70.0), prev_level="risk")
+        self.assertEqual(m["level"], "risk")
+        m = assess(beacon(td + 0.2, td + 0.7, 50.0, 25.0, 70.0), prev_level="ok")
+        self.assertEqual(m["level"], "caution")
+
+
 class TrackerTests(unittest.TestCase):
     def test_debounce(self):
         t = LevelTracker(persist=2)

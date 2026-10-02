@@ -159,7 +159,8 @@ def main(argv=None):
                     log(f"event: {s['note']}")
                 if s["source"] == "beacon" and mcfg["enabled"]:
                     mstate = moisture.assess(s, mcfg["caution_margin_C"],
-                                             mcfg["rh_int_caution"])
+                                             mcfg["rh_int_caution"],
+                                             prev_level=mtrack.level)
                     change = mtrack.update(mstate["level"])
                     # Event rows on every level change, except the first
                     # "ok" after start-up (nothing happened).
