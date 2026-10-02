@@ -220,7 +220,15 @@ button.ghost { width: 100%; background: transparent; }
   #bar { flex-wrap: wrap; height: auto; }
   main { height: auto; }
   #page-overview.active, .sys-grid, .wind-body { grid-template-columns: 1fr; }
-  #page-trends.active { height: 560px; }
+  /* The page scrolls here (height: auto), so chart areas need their own
+     heights — a percentage of an auto-height parent is 0 and nothing draws. */
+  .charts, #charts-solar { height: 460px; }
+  #moist-view { height: auto; }
+  #charts-moist { height: 460px; }
+  .toolbar, .solar-stats { flex-wrap: wrap; height: auto; }
+  .chart .legend { height: auto; }      /* let legends wrap instead of clipping */
+  .chart { flex: none; }                 /* don't squeeze; let the page grow */
+  .charts, #charts-moist { margin-bottom: 72px; }
   .wind-body { height: auto; } #rose { height: 320px; }
   .hero { font-size: 48px; }
 }
