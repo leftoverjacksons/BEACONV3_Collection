@@ -1,0 +1,73 @@
+                                  TSI                                          Page 1
+                          HEAT STRESS REPORT
+
+
+File Name          _________________________      Questemp 36   Rev 1.00
+
+                                                  Serial # TK09090909
+
+Employee           _________________________
+
+Facility           _________________________      Session (3)
+
+                                                  Start: 21-FEB-08     11:07:32
+Department         _________________________      Stop:   21-FEB-08    11:10:15
+
+Job                _________________________      Printed: 21-FEB-08    11:16:00
+
+Comments/Notes______________________________________________
+
+____________________________________________________________
+
+Logging Interval:       1 minutes
+Degrees Fahrenheit
+
+MAXIMUM LEVELS,       Sensor 1
+      WBGT IN          69.2      21-FEB-08   11:10:14
+      WBGT OUT         68.3      21-FEB-08   11:10:08
+      WET BULB         59.7      21-FEB-08   11:10:08
+      DRY BULB         82.7      21-FEB-08   11:09:56
+      GLOBE            91.4      21-FEB-08   11:10:12
+      HEAT INDEX          0      00-XXX-00   00:00:00
+      REL HUMIDITY      14%      21-FEB-08   11:07:32
+      FLOW (m/s)        0.6      21-FEB-08   11:09:08
+
+Session: 3                                                               Page 2
+Sensor: 1
+Degrees Fahrenheit
+Stay Times: ACGIH, Acclimated, WBGTi, clo correction = 1.0 C
+
+TIME    WBGTi WBGTo    WET    DRY    GLOBE     RH   HI   FLOW       L        M     H    VH
+----- ----- ----- ----- ----- ----- --- --- ----- --- --- --- ---
+11:08   68.7    67.9   59.4   82.4      90.7   13   0    0.5        60       60    60   60
+11:09   69.0    68.1   59.5   82.6      91.3   12   0    0.5        60       60    60   60
+
+Session: 3                                                               Page 3
+Sensor: 2
+Degrees Fahrenheit
+Stay Times: ACGIH, Acclimated, WBGTi, clo correction = 1.0 C
+
+TIME    WBGTi WBGTo    WET    DRY    GLOBE     RH   HI   L      M        H        VH
+----- ----- ----- ----- ----- ----- --- --- --- --- --- ---
+11:08   79.9    79.3   69.4   98.9 104.5       15   0    60   45        30       15
+11:09   80.8    80.2   70.3   99.2 105.6       15   0    60   45        30       15
+
+Session: 3                                                               Page 4
+Sensor: 3
+Degrees Fahrenheit
+Stay Times: ACGIH, Acclimated, WBGTi, clo correction = 1.0 C
+
+TIME    WBGTi WBGTo    WET    DRY    GLOBE     RH   HI   L    M         H        VH
+----- ----- ----- ----- ----- ----- --- --- --- --- --- ---
+11:08   68.6    68.1   58.3   88.0      92.7   11   0    60   60        60       60
+11:09   68.8    68.4   58.6   88.3      92.9   11   0    60   60        60       60
+
+Session: 3                                                               Page 5
+Sensor: WBGT(W-AVG) = .50*WBGT(1) + .25*WBGT(2) + .25*WBGT(3)
+Degrees Fahrenheit
+Stay Times: ACGIH, Acclimated, WBGTi, clo correction = 1.0 C
+        WBGTi   WBGTo
+TIME    W-AVG   W-AVG   L     M     H    VH
+-----   -----   ----- --- --- --- ---
+11:08    71.5    70.8   60    60    60   60
+11:09    71.8    71.1   60    60    60   45

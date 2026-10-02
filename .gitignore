@@ -3,3 +3,4 @@ __pycache__/
 config.toml
 /data/
 .venv/
+questemp_captures/

@@ -339,6 +339,8 @@ beacon_station/   logger.py (service), web.py (service), parsers.py, csvlog.py,
 web/              dashboard: index.html, app.js, style.css, vendor/uPlot
 deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, systemd units
 tools/            list_ports.py, hobo_scan.py
+questemp/         standalone TSI QUESTemp 34/36 serial toolkit (see questemp/README.md);
+                  not used by the station yet
 tests/            unit tests + fixtures/beacon_capture.txt (real console capture)
 legacy/           original laptop logger (PyQt6), unchanged
 ```
@@ -348,4 +350,6 @@ legacy/           original laptop logger (PyQt6), unchanged
 - **Data sync to Google Drive**: upload finished daily files (rclone)
   whenever the Pi finds a network connection, with a status line and a
   "Sync now" button on the System page.
-- **Merge tooling**: TSI import, and alignment against this CSV.
+- **Merge tooling**: TSI import, and alignment against this CSV. The
+  QUESTemp report parser and live-capture investigation live in
+  [`questemp/`](questemp/README.md).
