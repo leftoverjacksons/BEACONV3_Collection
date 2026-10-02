@@ -1,0 +1,4 @@
+# Instrument captures are byte-exact records; never convert line endings.
+*.bin binary
+questemp/captures/** -text
+tests/fixtures/questemp*.txt -text

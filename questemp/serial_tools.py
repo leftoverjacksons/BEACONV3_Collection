@@ -180,7 +180,7 @@ def _save_report(rec, data, n):
         rec.note("burst does not parse as a Print report; kept in .rx.bin only")
         return 0
     txt = rec.path(f".report{n}.txt")
-    txt.write_text(text, encoding="utf-8")
+    txt.write_bytes(data)   # as received; write_text would double CRs on Windows
     long_csv, wide_csv = export.write_csvs(sessions, rows, txt.with_suffix(""))
     rec.note(f"report: {len(sessions)} session(s), {len(rows)} rows -> "
              f"{long_csv.name}, {wide_csv.name}")

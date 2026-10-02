@@ -103,6 +103,30 @@ download. Each download is still started by hand unless step 2 shows the
 command DMS uses to request a download, which the bridge log would let us
 replay.
 
+## Observed on our unit (2026-10-02, step 4 baseline)
+
+Capture: `captures/questemp_20261002_162822.*`.
+
+- QUESTemp 34, firmware Rev 1.10, serial TEY120005. The report header reads
+  "QUEST TECHNOLOGIES".
+- One session: 01-SEP-26 08:55:28 to 04-SEP-26 12:36:34, logged every 1 min,
+  one sensor bar. That gives 4541 rows with no gaps.
+- Lines end in CRLF. Pages are separated by a form feed (0x0C), and the
+  report ends with `\f\n` and ^Z (0x1A). There are 92 pages of about 50 rows,
+  and each repeats the Session/Sensor header.
+- Column headers are `RH(%)` and `H.I.`, not the manual's `RH`/`HI`. There
+  are no FLOW or stay-time columns.
+- 276,131 bytes took 1064 s (16:28:48 to 16:46:32), about 260 B/s. That is
+  27 % of the 960 B/s a 9600-baud line can carry, so the unit paces the
+  output, not the line.
+- With the PC asserting DTR and RTS, the unit asserts CTS and DSR. CD and RI
+  are low.
+
+Git on Windows (`core.autocrlf`) converted the first commit of these files
+from CRLF to LF. `.gitattributes` now marks captures as binary. The
+committed `.rx.bin` was restored and checked byte for byte against the hex
+record in the `.log`.
+
 ## Report parser
 
 `printout.py` reads the column set from each table header, so tables with or

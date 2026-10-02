@@ -83,6 +83,47 @@ class PrintoutTests(unittest.TestCase):
         self.assertEqual(printout.parse("\x00\xff random noise\n")[1], [])
 
 
+REAL = Path(__file__).parent / "fixtures" / "questemp34_real_excerpt.txt"
+
+
+class RealQT34Tests(unittest.TestCase):
+    """Pages 1, 2, 20-22 and the trailer of a real QT34 Rev 1.10 report
+    (CRLF, form feeds, ^Z), 1-min log starting 01-SEP-26 08:55:28."""
+
+    def setUp(self):
+        text = REAL.read_bytes().decode("latin-1")
+        self.sessions, self.rows = printout.parse(text)
+
+    def test_header(self):
+        s = self.sessions[1]
+        self.assertEqual(s["model"], "Questemp 34")
+        self.assertEqual(s["firmware"], "1.10")
+        self.assertEqual(s["serial"], "TEY120005")
+        self.assertEqual(s["start"], datetime(2026, 9, 1, 8, 55, 28))
+
+    def test_column_names(self):
+        # Printed as "RH(%)" and "H.I." on this firmware.
+        r = self.rows[0]
+        self.assertEqual(r["time"], "08:56")
+        self.assertEqual(r["rh_pct"], 93)
+        self.assertEqual(r["heat_index"], 71)
+        self.assertEqual(r["globe"], 74.1)
+        self.assertNotIn("rh(%)", r)
+
+    def test_dates_across_pages(self):
+        ts = [r["timestamp"] for r in self.rows]
+        self.assertEqual(ts, sorted(ts))
+        self.assertIn(datetime(2026, 9, 1, 23, 59), ts)
+        self.assertIn(datetime(2026, 9, 2, 0, 0), ts)
+        # Page 21 starts at 00:46 on the next day, on a fresh page header.
+        self.assertIn(datetime(2026, 9, 2, 0, 46), ts)
+        self.assertEqual(ts[-1].date(), datetime(2026, 9, 2).date())
+
+    def test_heat_index_converted(self):
+        c = printout.to_celsius(self.rows[0])
+        self.assertAlmostEqual(c["heat_index"], (71 - 32) * 5 / 9, places=2)
+
+
 @unittest.skipUnless(hasattr(os, "openpty"), "needs a pty")
 class SerialToolTests(unittest.TestCase):
     """The pty's slave end is opened as the 'COM port'; the test plays the

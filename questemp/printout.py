@@ -14,7 +14,9 @@ sensor bar, or for the weighted average:
     11:08   68.7    67.9   59.4   82.4      90.7   13   0    0.5  60 60 60 60
 
 Rows carry HH:MM only. The date comes from the session's "Start:" line and
-is advanced by a day whenever the clock goes backwards within a table.
+is advanced by a day whenever the clock goes backwards. A long session is
+split over many pages that repeat the "Session:"/"Sensor:" header, so the
+clock is tracked per (session, sensor) across pages.
 Columns are taken from each table's own header, so tables printed without
 FLOW or without stay times parse the same way.
 """
@@ -55,6 +57,11 @@ _MODEL = re.compile(r"(Questemp\s*\d+)\s+Rev\s*(\S+)", re.I)
 _ROW = re.compile(r"^\s*(\d{1,2}):(\d{2})\s+(.*)$")
 
 
+def _norm(name):
+    # QT34 Rev 1.10 prints "RH(%)" and "H.I."; the manual shows "RH", "HI".
+    return re.sub(r"[^A-Za-z0-9-]", "", name.split("(")[0])
+
+
 def parse_date(day, mon, yy):
     return date(2000 + int(yy), MONTHS[mon.upper()], int(day))
 
@@ -85,8 +92,7 @@ def parse(text):
     units = None
     columns = None
     prev_line = ""
-    day = None
-    last_minute = None
+    clock = {}      # (session, sensor) -> [date, minute of day] of last row
     pending = {}    # page-1 fields printed before "Session (n)" appears
 
     for raw in text.replace("\f", "\n").splitlines():
@@ -125,9 +131,6 @@ def parse(text):
             sessions.setdefault(cur_session, {"session": cur_session})
             columns = None
             sensor = None
-            start = sessions[cur_session].get("start")
-            day = start.date() if start else None
-            last_minute = (start.hour * 60 + start.minute) if start else None
             prev_line = line
             continue
 
@@ -151,17 +154,25 @@ def parse(text):
             above = prev_line.split()
             if names[:2] == ["W-AVG", "W-AVG"] and len(above) >= 2:
                 names = [above[0], above[1]] + names[2:]
-            columns = [COLUMN_MAP.get(n, n.lower()) for n in names]
+            columns = [COLUMN_MAP.get(_norm(n), _norm(n).lower())
+                       for n in names]
 
         elif columns is not None and cur_session is not None:
             m = _ROW.match(line)
             if m:
                 hh, mm = int(m.group(1)), int(m.group(2))
                 minute = hh * 60 + mm
-                if day is not None:
-                    if last_minute is not None and minute < last_minute:
-                        day += timedelta(days=1)
-                    last_minute = minute
+                st = clock.get((cur_session, sensor))
+                if st is None:
+                    start = sessions[cur_session].get("start")
+                    st = clock[(cur_session, sensor)] = (
+                        [start.date(), start.hour * 60 + start.minute]
+                        if start else [None, None])
+                if st[0] is not None:
+                    if minute < st[1]:
+                        st[0] += timedelta(days=1)
+                    st[1] = minute
+                day = st[0]
                 vals = m.group(3).split()
                 row = {
                     "session": cur_session,
