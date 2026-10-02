@@ -325,10 +325,41 @@ def bridge(device_port, host_port, baud, outdir, echo=True):
     return rec.path(".log")
 
 
+def _registry_ports():
+    """Windows: every port in HKLM\\HARDWARE\\DEVICEMAP\\SERIALCOMM, which is
+    where most programs (DMS included) find ports. com0com pairs are listed
+    here even when they are not in the "Ports" device class that pyserial
+    enumerates."""
+    try:
+        import winreg
+    except ImportError:
+        return {}
+    out = {}
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                             r"HARDWARE\DEVICEMAP\SERIALCOMM")
+    except OSError:
+        return out
+    with key:
+        i = 0
+        while True:
+            try:
+                dev, port, _ = winreg.EnumValue(key, i)
+            except OSError:
+                break
+            out[str(port)] = dev
+            i += 1
+    return out
+
+
 def list_ports():
     from serial.tools import list_ports as lp
     ports = sorted(lp.comports(), key=lambda p: p.device)
     for p in ports:
         print(f"{p.device:<14} {p.description}  [{p.hwid}]")
-    if not ports:
+    seen = {p.device for p in ports}
+    extra = {k: v for k, v in _registry_ports().items() if k not in seen}
+    for port, dev in sorted(extra.items()):
+        print(f"{port:<14} {dev}  [registry only; e.g. com0com]")
+    if not ports and not extra:
         print("no serial ports found", file=sys.stderr)
