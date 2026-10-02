@@ -120,9 +120,20 @@ def _bdaddr(b):
 
 
 def parse_hci_event(pkt):
+    """Raw HCI event packet -> [(address, onset_payload)]."""
+    return [(r["addr"], r["payload"]) for r in parse_hci_reports(pkt)]
+
+
+def _s8(b):
+    return b - 256 if b > 127 else b
+
+
+def parse_hci_reports(pkt):
     """Raw HCI event packet (leading 0x04 packet-type byte included) ->
-    [(address, onset_payload)] from LE (extended) advertising reports.
-    Reports are read sequentially, as the Linux kernel does."""
+    [{addr, payload, rssi, pdu}] for Onset manufacturer data in LE
+    (extended) advertising reports. pdu is "adv" for the advertisement
+    itself and "rsp" for a scan response. Reports are read sequentially,
+    as the Linux kernel does."""
     out = []
     if len(pkt) < 5 or pkt[0] != HCI_EVENT_PKT or pkt[1] != EVT_LE_META:
         return out
@@ -134,12 +145,16 @@ def parse_hci_event(pkt):
                 # type(1) addr_type(1) addr(6) len(1) data rssi(1)
                 addr, n = body[i + 2:i + 8], body[i + 8]
                 data = body[i + 9:i + 9 + n]
+                pdu = "rsp" if body[i] == 0x04 else "adv"
+                rssi = _s8(body[i + 9 + n]) if i + 9 + n < len(body) else None
                 i += 10 + n
             elif sub == LE_EXT_ADV_REPORT:
                 # type(2) addr_type(1) addr(6) phy(2) sid tx rssi
                 # interval(2) direct_type direct_addr(6) len(1) data
                 addr, n = body[i + 3:i + 9], body[i + 23]
                 data = body[i + 24:i + 24 + n]
+                pdu = "rsp" if body[i] & 0x08 else "adv"
+                rssi = _s8(body[i + 13])
                 i += 24 + n
             else:
                 return out
@@ -147,7 +162,8 @@ def parse_hci_event(pkt):
                 break
             payload = mfr_data(data)
             if payload:
-                out.append((_bdaddr(addr), payload))
+                out.append({"addr": _bdaddr(addr), "payload": payload,
+                            "rssi": rssi, "pdu": pdu})
     except IndexError:
         pass
     return out
@@ -225,6 +241,7 @@ class HoboReader(threading.Thread):
         self.want_addr = (cfg.get("address") or "").strip().upper()
         self.heartbeat_s = float(cfg.get("heartbeat_s", 60))
         self.hci_dev = int(cfg.get("hci_dev", 0))
+        self.tap = None          # optional callback for every packet (tools)
         self.simulate = simulate
         self._raw_on = False     # raw HCI path active (else bleak callbacks)
         self._raw_heard = None   # monotonic time of last Onset packet via HCI
@@ -245,16 +262,26 @@ class HoboReader(threading.Thread):
     def _note(self, text):
         self.q.put(("note", self.inst, text))
 
-    def on_advert(self, address, payload):
+    def on_advert(self, address, payload, rssi=None, pdu=None):
         """Called for every advertisement heard (any thread)."""
         address = address.upper()
         if self.want_addr and address != self.want_addr:
             return
         now = time.monotonic()
-        self._set(last_seen=time.time(), address=address)
         kind, fields = decode(payload)
+        # Diagnostics: packets HEARD per kind/PDU since start, and signal.
+        key = f"{kind or '?' + str(len(payload))}/{pdu or '-'}"
+        with self._lock:
+            counts = dict(self.state.get("packets") or {})
+            counts[key] = counts.get(key, 0) + 1
+        self._set(last_seen=time.time(), address=address, packets=counts,
+                  rssi=rssi if rssi is not None else self.state.get("rssi"))
+        if self.tap:
+            self.tap(address, payload, rssi, pdu, kind, fields)
         if kind is None:
-            return
+            # Unrecognised layout: keep the raw bytes (change/heartbeat
+            # limited like the rest) so it can be decoded later.
+            kind, fields = "?" + str(len(payload)), {}
         if "hobo_serial" in fields:
             self._set(serial=fields.pop("hobo_serial"))
         with self._lock:
@@ -299,7 +326,7 @@ class HoboReader(threading.Thread):
                 return
             self._dbus_heard = time.monotonic()
             if not self._raw_on:
-                self.on_advert(device.address, data)
+                self.on_advert(device.address, data, getattr(adv, "rssi", None), None)
 
         async def scan_forever():
             # DuplicateData on: report repeats, so the raw reader sees the
@@ -361,9 +388,9 @@ class HoboReader(threading.Thread):
                         pkt = sock.recv(512)
                     except socket.timeout:
                         continue
-                    for addr, payload in parse_hci_event(pkt):
+                    for r in parse_hci_reports(pkt):
                         self._raw_heard = time.monotonic()
-                        self.on_advert(addr, payload)
+                        self.on_advert(r["addr"], r["payload"], r["rssi"], r["pdu"])
             except OSError as exc:       # adapter reset / removed
                 self._raw_on = False
                 self._note(f"raw HCI read failed: {exc}")

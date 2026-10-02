@@ -89,6 +89,16 @@ class ReaderTests(unittest.TestCase):
         r.on_advert("F8:27:3E:19:81:A5", a)
         self.assertEqual(len(self._samples(q)), 2)
 
+    def test_unknown_layout_kept_raw_and_counted(self):
+        r, q = self._reader()
+        r.on_advert("F8:27:3E:19:81:A5", bytes.fromhex("0102030405060708"), -70, "rsp")
+        rows = self._samples(q)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["hobo_raw"], "0102030405060708")
+        self.assertNotIn("solar_Wm2", rows[0])
+        self.assertEqual(r.state["packets"], {"?8/rsp": 1})
+        self.assertEqual(r.state["rssi"], -70)
+
     def test_address_filter(self):
         r, q = self._reader(address="aa:bb:cc:dd:ee:ff")
         r.on_advert("F8:27:3E:19:81:A5", bytes.fromhex(CAPTURED[0][0]))
@@ -136,6 +146,14 @@ class HciParseTests(unittest.TestCase):
         body = bytes([0x0D, 0x01]) + rep
         pkt = bytes([0x04, 0x3E, len(body)]) + body
         self.assertEqual(parse_hci_event(pkt), [("F8:27:3E:19:81:A5", payload)])
+
+    def test_reports_carry_pdu_type_and_rssi(self):
+        from beacon_station.hobo import parse_hci_reports
+        adv = parse_hci_reports(_legacy_event("F8:27:3E:19:81:A5", bytes.fromhex(CAPTURED[0][0])))[0]
+        self.assertEqual((adv["pdu"], adv["rssi"]), ("adv", -68))      # 0xBC
+        rsp = bytearray(_legacy_event("F8:27:3E:19:81:A5", bytes.fromhex(CAPTURED[4][0])))
+        rsp[5] = 0x04                                                   # SCAN_RSP
+        self.assertEqual(parse_hci_reports(bytes(rsp))[0]["pdu"], "rsp")
 
     def test_filter_is_full_kernel_struct(self):
         # Linux >= 6.9 rejects a short struct hci_ufilter with EINVAL (seen

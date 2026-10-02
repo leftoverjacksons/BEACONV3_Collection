@@ -631,8 +631,10 @@ async function refreshSystem() {
       const rd = st.readers?.[inst];
       if (!rd) { row(NAMES[inst], "disabled"); continue; }
       const [lvl, text] = health(inst);
+      const pk = rd.packets ? Object.entries(rd.packets).map(([k, n]) => `${k} ${n}`).join(" · ") : "";
       const extra = inst === "hobo" && rd.address
-        ? `<br><span class="muted">${rd.address}${rd.serial ? " · SN " + rd.serial : ""}</span>` : "";
+        ? `<br><span class="muted">${rd.address}${rd.serial ? " · SN " + rd.serial : ""}${rd.rssi != null ? " · " + rd.rssi + " dBm" : ""}</span>`
+          + (pk ? `<br><span class="muted">heard: ${pk}</span>` : "") : "";
       row(NAMES[inst],
         `${ICON[lvl]} ${text}<br><span class="muted">${rd.port}${rd.detail && rd.detail !== rd.port ? " — " + rd.detail : ""}</span>${extra}`, lvl);
     }
