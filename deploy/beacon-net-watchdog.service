@@ -1,0 +1,8 @@
+# Installed by deploy/install.sh (@REPO@ is substituted).
+[Unit]
+Description=BEACON station Wi-Fi watchdog (reconnect if Wi-Fi drops)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=@REPO@/deploy/net-watchdog.sh wlan0

@@ -112,6 +112,26 @@ appears on the Pi's own screen. To reopen the kiosk, double-tap the
 The System page also lists the Pi's Wi-Fi network, its IP address, and its
 Tailscale address, with the matching `ssh` command for each.
 
+### Wi-Fi that reconnects by itself
+
+`install.sh` sets every saved Wi-Fi network to **retry forever** (by
+default NetworkManager stops after a few failed attempts) and turns
+**Wi-Fi power save off**, a common cause of drops on the Pi. It also
+installs a watchdog, `beacon-net-watchdog.timer`, that checks every
+2 minutes. If `wlan0` is down, or connected but can reach neither its
+gateway nor the internet, the watchdog escalates one step per failed
+check:
+
+1. Reconnect, letting NetworkManager pick the best saved network.
+2. Restart the Wi-Fi radio.
+3. Restart NetworkManager.
+
+It never reboots the Pi, and logging continues offline regardless. Add
+another trusted network (e.g. a phone hotspot) with `sudo nmtui`, then
+re-run `./deploy/install.sh --quick` so the new network gets the same
+settings. To see what the watchdog has done:
+`journalctl -u beacon-net-watchdog`.
+
 ### Screen
 
 - **Blanking:** `raspi-config` → *Display Options* → *Screen Blanking*. A
@@ -337,7 +357,8 @@ beacon_station/   logger.py (service), web.py (service), parsers.py, csvlog.py,
                   serial_io.py (readers + simulators), hobo.py (BLE listener),
                   moisture.py (dew points, condensation risk), sysinfo.py, config.py
 web/              dashboard: index.html, app.js, style.css, vendor/uPlot
-deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, systemd units
+deploy/           install.sh, update.sh, kiosk.sh, kiosk-exit.sh, net-watchdog.sh,
+                  systemd units
 tools/            list_ports.py, hobo_scan.py
 tests/            unit tests + fixtures/beacon_capture.txt (real console capture)
 legacy/           original laptop logger (PyQt6), unchanged

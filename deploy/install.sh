@@ -56,6 +56,26 @@ if getent group bluetooth >/dev/null && ! id -nG "$USER_NAME" | grep -qw bluetoo
 fi
 echo "   radio: $(rfkill list bluetooth 2>/dev/null | grep -q 'Soft blocked: yes' && echo blocked || echo on)"
 
+step "Wi-Fi resilience"
+# NetworkManager gives up on a saved network after a few failed attempts
+# (until reboot or manual reconnect), and Wi-Fi power save on the Pi's
+# chip is a common cause of drops. For every saved Wi-Fi network: retry
+# forever, power save off. (UUIDs, not names: names may contain ':'.)
+# Takes effect at the next (re)connection, so this SSH session isn't cut.
+if command -v nmcli >/dev/null; then
+  nmcli -t -f UUID,TYPE connection show 2>/dev/null \
+    | awk -F: '$2 == "802-11-wireless" {print $1}' \
+    | while read -r uuid; do
+        name="$(nmcli -g connection.id connection show "$uuid" 2>/dev/null)"
+        if sudo nmcli connection modify "$uuid" connection.autoconnect yes \
+             connection.autoconnect-retries 0 802-11-wireless.powersave 2; then
+          echo "   $name: auto-reconnect forever, power save off"
+        fi
+      done
+else
+  echo "   nmcli not found — skipped"
+fi
+
 step "serial port permission (dialout group)"
 if id -nG "$USER_NAME" | grep -qw dialout; then
   echo "   $USER_NAME already in dialout"
@@ -88,8 +108,15 @@ for unit in beacon-logger beacon-web; do
       -e "s|@GROUPS@|$GROUPS_SVC|g" "deploy/$unit.service" \
     | sudo tee "/etc/systemd/system/$unit.service" >/dev/null
 done
+# Wi-Fi watchdog: checks every 2 min, reconnects if Wi-Fi has dropped.
+for unit in beacon-net-watchdog.service beacon-net-watchdog.timer; do
+  sed -e "s|@REPO@|$REPO|g" "deploy/$unit" \
+    | sudo tee "/etc/systemd/system/$unit" >/dev/null
+done
+chmod +x deploy/net-watchdog.sh
 sudo systemctl daemon-reload
 sudo systemctl enable beacon-logger beacon-web >/dev/null
+sudo systemctl enable --now beacon-net-watchdog.timer >/dev/null
 sudo systemctl restart beacon-logger beacon-web
 sleep 2
 systemctl --no-pager --lines=0 status beacon-logger beacon-web | grep -E '●|Active:' || true
